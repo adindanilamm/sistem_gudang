@@ -11,6 +11,7 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
+  <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
 
   <!-- LOGIN PAGE -->
   <div id="login-page" class="page login-page active">
@@ -85,6 +86,7 @@
     
     <div class="main-area">
       <header class="topbar">
+        <button type="button" class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Buka menu">☰</button>
         <div class="search-bar">
           <span class="search-icon">🔍</span>
           <input type="text" placeholder="Cari data pengiriman...">
@@ -127,6 +129,7 @@
     
     <div class="main-area">
       <header class="topbar">
+        <button type="button" class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Buka menu">☰</button>
         <div class="search-bar">
           <span class="search-icon">🔍</span>
           <input type="text" placeholder="Cari aktivitas...">

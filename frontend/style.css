@@ -300,6 +300,29 @@ body.dashboard-mode {
   z-index: 100;
 }
 
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: none;
+  z-index: 95;
+}
+
+.mobile-menu-btn {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text-dark);
+  font-size: 22px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
 .sidebar-brand {
   padding: 24px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
@@ -605,6 +628,13 @@ body.dashboard-mode {
   width: 100%;
   text-align: center;
 }
+.chart-value {
+  position: absolute;
+  top: -18px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 .progress-group { margin-bottom: 20px; }
 .progress-group-header {
@@ -721,10 +751,23 @@ tbody tr:hover { background: #FAFBFE; }
   cursor: pointer;
   font-size: 12px;
 }
+.page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .page-btn.active {
   background: #0A1B33;
   color: #fff;
   border-color: #0A1B33;
+}
+.page-ellipsis {
+  min-width: 20px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* ═══ FORMS ═══ */
@@ -779,6 +822,35 @@ tbody tr:hover { background: #FAFBFE; }
   font-weight: 600;
   cursor: pointer;
   display: flex; align-items: center; gap: 4px;
+}
+
+.scanner-panel {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #F8FAFC;
+}
+
+.scanner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.qr-reader {
+  min-height: 260px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #0A1B33;
+}
+
+.scanner-panel p {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* Warning Header */
@@ -845,10 +917,13 @@ tbody tr:hover { background: #FAFBFE; }
 }
 
 /* ═══ PRINT ═══ */
-#printable-report { display: none; }
+#printable-report,
+#printable-transaction { display: none; }
 @media print {
   body { background: white; }
   .sidebar, .topbar, .filter-bar, .no-print, .header-actions { display: none !important; }
+  body.printing-transaction .page { display: none !important; }
+  body.printing-transaction #printable-transaction { display: block; position: absolute; left: 0; top: 0; width: 100%; padding: 24px; }
   .main-area { margin-left: 0; }
   .main-content { padding: 0; }
   #printable-report { display: block; position: absolute; left: 0; top: 0; width: 100%; }
@@ -893,6 +968,113 @@ tbody tr:hover { background: #FAFBFE; }
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 768px) {
+  .dashboard-layout {
+    height: 100vh;
+  }
+
+  .sidebar {
+    width: min(82vw, 300px);
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    z-index: 1100;
+    box-shadow: 20px 0 40px rgba(15, 23, 42, 0.25);
+  }
+
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  body.sidebar-open .sidebar-overlay {
+    display: block;
+  }
+
+  .main-area {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .topbar {
+    height: 64px;
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .mobile-menu-btn {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .topbar .search-bar {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+  }
+
+  .profile-text {
+    display: none;
+  }
+
+  .profile-info {
+    gap: 8px;
+  }
+
+  .main-content {
+    padding: 18px 14px 28px;
+  }
+
+  .content-header {
+    margin-bottom: 18px;
+  }
+
+  .content-header h2 {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+
+  .content-header[style] {
+    display: block !important;
+  }
+
+  .header-actions {
+    flex-direction: column;
+  }
+
+  .dashboard-top-row,
+  .stats-grid,
+  .form-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-group[style] {
+    grid-column: auto !important;
+  }
+
+  .filter-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .filter-bar .search-bar,
+  .filter-bar .form-group {
+    width: 100% !important;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 8px;
+  }
+
+  .table-wrapper {
+    border-radius: 8px;
+  }
+
+  .modal-box {
+    max-width: calc(100vw - 32px);
+    padding: 24px 20px;
+  }
+
   .login-container {
     flex-direction: column;
     height: auto;

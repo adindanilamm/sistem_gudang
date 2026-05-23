@@ -95,6 +95,8 @@ function fmtDate(d) { return new Date(d).toLocaleDateString('id-ID', { day: '2-d
 function fmtDateShort(d) { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }
 
 let currentUser = null, qrScanner = null;
+let stokPage = 1;
+const PAGE_SIZE = 10;
 // =====================================================================
 // QR SCANNER STATE FLAGS  (FIX: cegah race-condition pada scan ke-2 dst)
 //  - isScannerStarting : mencegah double-start saat user klik 2x cepat
@@ -112,6 +114,15 @@ function showPage(id) {
   let p = document.getElementById(id);
   if (p) p.classList.add('active');
   document.body.classList.toggle('dashboard-mode', id === 'karyawan-page' || id === 'manager-page');
+  closeSidebar();
+}
+
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-open');
+}
+
+function closeSidebar() {
+  document.body.classList.remove('sidebar-open');
 }
 
 function showModal(icon, cls, title, msg, actions) {
@@ -211,6 +222,7 @@ async function handleLogin(e) {
   }
 }
 function doLogout() {
+  closeSidebar();
   showModal('🚪', 'warning', 'Konfirmasi Logout', 'Apakah Anda yakin ingin keluar?', [
     { l: 'Batal', c: 'btn-outline' },
     {
@@ -280,6 +292,40 @@ function getStockSummary() {
   });
 }
 
+function getWeeklyActivity() {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const labels = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today.getTime() - (6 - index) * dayMs);
+    return {
+      key: date.toISOString().slice(0, 10),
+      label: labels[date.getDay()],
+      masuk: 0,
+      keluar: 0,
+    };
+  });
+
+  const byKey = Object.fromEntries(days.map(day => [day.key, day]));
+  getTxns().forEach(txn => {
+    const date = new Date(txn.date);
+    if (Number.isNaN(date.getTime())) return;
+    date.setHours(0, 0, 0, 0);
+    const key = date.toISOString().slice(0, 10);
+    if (!byKey[key]) return;
+    byKey[key][txn.type] += Number(txn.jumlah) || 0;
+  });
+
+  const maxValue = Math.max(1, ...days.flatMap(day => [day.masuk, day.keluar]));
+  return days.map(day => ({
+    ...day,
+    masukHeight: Math.max(day.masuk ? 8 : 2, Math.round((day.masuk / maxValue) * 100)),
+    keluarHeight: Math.max(day.keluar ? 8 : 2, Math.round((day.keluar / maxValue) * 100)),
+  }));
+}
+
 function setActiveNav(idPrefix) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   let activeEl = document.getElementById('nav-' + idPrefix);
@@ -287,6 +333,7 @@ function setActiveNav(idPrefix) {
 }
 
 async function showKaryawanView(v) {
+  closeSidebar();
   await stopQR();
   let c = document.getElementById('karyawan-content');
   setActiveNav(v);
@@ -302,12 +349,17 @@ async function showKaryawanView(v) {
   else if (v === 'profile') { showProfile('karyawan-content') }
   else if (v === 'password') { showChangePassword('karyawan-content') }
   else if (v === 'tambah-sku') { renderTambahSKU(c) }
+  else if (v === 'history-masuk' || v === 'history-keluar') {
+    await fetchAllData();
+    renderTransactionHistory(v.replace('history-', ''), c);
+  }
 }
 
 function renderKaryawanDashboard(c) {
   let summary = getStockSummary();
-  let lowStocks = summary.filter(i => i.stok <= 10).slice(0, 5);
-  let displayItems = lowStocks.length ? lowStocks : summary.slice(0, 10);
+  let activity = getWeeklyActivity();
+  let lowStocks = summary.filter(i => i.stok <= 10);
+  let displayItems = lowStocks.length ? lowStocks.slice(0, 10) : summary.slice(0, 10);
   let tableTitle = lowStocks.length ? 'Peringatan Stok Menipis' : 'Data Barang Terkini';
   
   c.innerHTML = `
@@ -315,12 +367,14 @@ function renderKaryawanDashboard(c) {
       <div class="card">
         <h3 class="card-title">Grafik Aktivitas</h3>
         <div class="chart-container">
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 40%"></div><div class="chart-bar keluar" style="height: 20%"></div><div class="chart-label">Sen</div></div>
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 60%"></div><div class="chart-bar keluar" style="height: 30%"></div><div class="chart-label">Sel</div></div>
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 80%"></div><div class="chart-bar keluar" style="height: 50%"></div><div class="chart-label">Rab</div></div>
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 30%"></div><div class="chart-bar keluar" style="height: 70%"></div><div class="chart-label">Kam</div></div>
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 90%"></div><div class="chart-bar keluar" style="height: 40%"></div><div class="chart-label">Jum</div></div>
-          <div class="chart-bar-group"><div class="chart-bar masuk" style="height: 20%"></div><div class="chart-bar keluar" style="height: 10%"></div><div class="chart-label">Sab</div></div>
+          ${activity.map(day => `
+            <div class="chart-bar-group" title="${day.label}: Masuk ${day.masuk}, Keluar ${day.keluar}">
+              <div class="chart-value">${day.masuk || day.keluar ? `${day.masuk}/${day.keluar}` : '-'}</div>
+              <div class="chart-bar masuk" style="height: ${day.masukHeight}%"></div>
+              <div class="chart-bar keluar" style="height: ${day.keluarHeight}%"></div>
+              <div class="chart-label">${day.label}</div>
+            </div>
+          `).join('')}
         </div>
         <div style="display:flex; justify-content:center; gap:15px; margin-top:20px; font-size:12px; color:var(--text-muted)">
           <div style="display:flex; align-items:center; gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:var(--success)"></span> Masuk</div>
@@ -384,9 +438,18 @@ function renderItemForm(type, c) {
         <div class="form-group" style="grid-column: span 2;">
           <label>Nama Barang / SKU</label>
           <div class="input-scan-wrap">
-            <input type="text" id="manual-code-${type}" class="form-control" placeholder="Ketik SKU (Contoh: ELEC-LP-001)" autofocus onkeydown="if(event.key==='Enter'){event.preventDefault();lookupItem('${type}')}">
-            <button class="btn-scan-inline" onclick="lookupItem('${type}')">🔍 Scan</button>
+            <input type="text" id="manual-code-${type}" class="form-control" placeholder="Ketik / scan SKU (Contoh: 8990001114177)" autofocus onkeydown="if(event.key==='Enter'){event.preventDefault();lookupItem('${type}')}">
+            <button type="button" class="btn-scan-inline" onclick="toggleQR('${type}')">Kamera</button>
           </div>
+          <div id="qr-reader-wrap-${type}" class="scanner-panel" style="display:none">
+            <div class="scanner-header">
+              <strong>Arahkan kamera ke barcode</strong>
+              <button type="button" class="btn btn-outline btn-sm" onclick="toggleQR('${type}')">Tutup</button>
+            </div>
+            <div id="qr-reader-${type}" class="qr-reader"></div>
+            <p>Jika kamera tidak terbuka, izinkan akses kamera di browser atau ketik SKU manual lalu tekan Enter.</p>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="lookupItem('${type}')">Cari SKU Manual</button>
         </div>
       </div>
       
@@ -668,7 +731,7 @@ function renderRecent(type) {
       <td><strong style="color:var(--text-dark)">${t.jumlah} ${it ? it.satuan : ''}</strong></td>
       <td>${details.rak}</td>
       <td><span class="badge badge-success">BERHASIL</span></td>
-      <td><button class="icon-btn">🖨️</button></td>
+      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">Print</button></td>
     </tr>`;
   }).join('');
 
@@ -676,7 +739,7 @@ function renderRecent(type) {
     <div class="recent-section">
       <div class="recent-header">
         <h3>Aktivitas Terakhir (${type.toUpperCase()})</h3>
-      <a href="#" style="font-size:12px; color:var(--secondary); text-decoration:none; font-weight:600;">Lihat Semua &rarr;</a>
+      <a href="#" onclick="event.preventDefault();showKaryawanView('history-${type}')" style="font-size:12px; color:var(--secondary); text-decoration:none; font-weight:600;">Lihat Semua &rarr;</a>
       </div>
       <div class="table-wrapper recent-table">
         <table>
@@ -688,7 +751,86 @@ function renderRecent(type) {
   `;
 }
 
+function renderTransactionHistory(type, c) {
+  let title = type === 'masuk' ? 'Riwayat Barang Masuk' : 'Riwayat Barang Keluar';
+  let txns = getTxns().filter(t => t.type === type).slice().reverse();
+  let rows = txns.map(t => {
+    let it = getItemByCode(t.kode);
+    let details = getItemDetails(it);
+    return `<tr>
+      <td>${type === 'masuk' ? 'IN' : 'OUT'}-${9000 + t.id}</td>
+      <td>${fmtDate(t.date)}</td>
+      <td><div class="item-name-cell"><strong>${it ? it.nama : t.kode}</strong><span>${t.kode}</span></div></td>
+      <td><strong>${t.jumlah} ${it ? it.satuan : ''}</strong></td>
+      <td>${details.rak}</td>
+      <td>${t.user || '-'}</td>
+      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">Print</button></td>
+    </tr>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="content-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h2>${title}</h2>
+        <p>Semua aktivitas ${type === 'masuk' ? 'penerimaan' : 'pengeluaran'} barang yang tercatat di sistem.</p>
+      </div>
+      <button class="btn btn-outline" onclick="showKaryawanView('${type}')">Kembali</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead class="table-header-dark"><tr><th>NO. TRANSAKSI</th><th>WAKTU</th><th>BARANG</th><th>JUMLAH</th><th>LOKASI RAK</th><th>USER</th><th>AKSI</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" style="text-align:center;padding:30px;">Belum ada transaksi.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function printTransaction(id) {
+  let txn = getTxns().find(t => Number(t.id) === Number(id));
+  if (!txn) {
+    showModal('!', 'warning', 'Transaksi Tidak Ditemukan', 'Data transaksi tidak tersedia.', [{ l: 'OK' }]);
+    return;
+  }
+  let item = getItemByCode(txn.kode);
+  let details = getItemDetails(item);
+  let existing = document.getElementById('printable-transaction');
+  if (existing) existing.remove();
+
+  let printable = document.createElement('div');
+  printable.id = 'printable-transaction';
+  printable.innerHTML = `
+    <div class="print-header">
+      <h1>Bukti Transaksi Barang</h1>
+      <p>${txn.type === 'masuk' ? 'Barang Masuk' : 'Barang Keluar'}</p>
+    </div>
+    <table class="print-table">
+      <tbody>
+        <tr><th>No. Transaksi</th><td>${txn.type === 'masuk' ? 'IN' : 'OUT'}-${9000 + txn.id}</td></tr>
+        <tr><th>Tanggal</th><td>${fmtDate(txn.date)}</td></tr>
+        <tr><th>SKU</th><td>${txn.kode}</td></tr>
+        <tr><th>Nama Barang</th><td>${item ? item.nama : '-'}</td></tr>
+        <tr><th>Jumlah</th><td>${txn.jumlah} ${item ? item.satuan : ''}</td></tr>
+        <tr><th>Lokasi Rak</th><td>${details.rak}</td></tr>
+        <tr><th>Dicatat Oleh</th><td>${txn.user || '-'}</td></tr>
+      </tbody>
+    </table>
+    <div class="print-signatures">
+      <div class="sig-box"><p>Petugas,</p><div class="sig-line"></div><p>${txn.user || '-'}</p></div>
+      <div class="sig-box"><p>Penerima/Pemeriksa,</p><div class="sig-line"></div><p>&nbsp;</p></div>
+    </div>
+  `;
+  document.body.appendChild(printable);
+  document.body.classList.add('printing-transaction');
+  window.onafterprint = () => {
+    document.body.classList.remove('printing-transaction');
+    let receipt = document.getElementById('printable-transaction');
+    if (receipt) receipt.remove();
+  };
+  window.print();
+}
+
 function renderStokTable(c) {
+  stokPage = 1;
   let summary = getStockSummary();
   let items = getItems();
   let lowCount = summary.filter(i => i.stok <= 10).length;
@@ -759,42 +901,73 @@ function renderStokTable(c) {
     <div class="table-wrapper">
       <table id="stok-table">
         <thead class="table-header-dark"><tr><th>SKU / NAMA BARANG</th><th>KATEGORI</th><th>JUMLAH STOK</th><th>LOKASI RAK</th><th>STATUS</th><th>AKSI</th></tr></thead>
-        <tbody id="stok-tbody">${rows}</tbody>
+        <tbody id="stok-tbody"></tbody>
       </table>
       <div class="table-footer">
-        <span>Showing 1 to ${summary.length} of ${summary.length} results</span>
-        <div class="pagination"><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">></button></div>
+        <span id="stok-page-info"></span>
+        <div class="pagination" id="stok-pagination"></div>
       </div>
     </div>
   `;
+  renderStokPage();
 }
 
 function filterStokTable() {
-  let input = document.getElementById('search-stok');
-  if (!input) return;
-  let filter = input.value.toUpperCase();
+  stokPage = 1;
+  renderStokPage();
+}
+
+function getFilteredStockSummary() {
+  let filter = (document.getElementById('search-stok')?.value || '').trim().toUpperCase();
+  return getStockSummary().filter(i => {
+    let details = getItemDetails(i);
+    let haystack = `${i.kode} ${i.nama} ${details.kategori} ${details.rak}`.toUpperCase();
+    return !filter || haystack.includes(filter);
+  });
+}
+
+function renderStokPage(page = stokPage) {
   let tbody = document.getElementById('stok-tbody');
   if (!tbody) return;
-  let trs = tbody.getElementsByTagName('tr');
-  
-  for (let i = 0; i < trs.length; i++) {
-    // Skip empty state row
-    if(trs[i].getElementsByTagName('td').length === 1) continue;
-    
-    let tdItem = trs[i].getElementsByTagName('td')[0];
-    let tdKategori = trs[i].getElementsByTagName('td')[1];
-    
-    if (tdItem || tdKategori) {
-      let txtItem = tdItem.textContent || tdItem.innerText;
-      let txtKategori = tdKategori.textContent || tdKategori.innerText;
-      
-      if (txtItem.toUpperCase().indexOf(filter) > -1 || txtKategori.toUpperCase().indexOf(filter) > -1) {
-        trs[i].style.display = "";
-      } else {
-        trs[i].style.display = "none";
-      }
+
+  let summary = getFilteredStockSummary();
+  let totalPages = Math.max(1, Math.ceil(summary.length / PAGE_SIZE));
+  stokPage = Math.min(Math.max(1, page), totalPages);
+  let start = (stokPage - 1) * PAGE_SIZE;
+  let pageItems = summary.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pageItems.length ? pageItems.map(i => {
+    let details = getItemDetails(i);
+    let statusBadge = i.stok > 10 ? '<span class="badge badge-success">Tersedia</span>' : (i.stok > 0 ? '<span class="badge badge-warning">Stok Rendah</span>' : '<span class="badge badge-danger">Habis</span>');
+    let colorClass = i.stok > 10 ? 'var(--secondary)' : (i.stok > 0 ? 'var(--warning)' : 'var(--danger)');
+    return `<tr>
+      <td><div class="item-name-cell"><strong>${i.kode}</strong><span>${i.nama}</span></div></td>
+      <td>${details.kategori}</td>
+      <td><strong style="color:${colorClass}">${i.stok} ${i.satuan}</strong></td>
+      <td>${details.rak}</td>
+      <td>${statusBadge}</td>
+      <td><div class="action-btns"><button class="icon-btn" onclick="viewItemDetail('${i.kode}')">Lihat</button></div></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" style="text-align:center;padding:30px;">Belum ada data</td></tr>';
+
+  let info = document.getElementById('stok-page-info');
+  if (info) {
+    let end = Math.min(start + PAGE_SIZE, summary.length);
+    info.textContent = summary.length ? `Menampilkan ${start + 1}-${end} dari ${summary.length} data` : 'Tidak ada data';
+  }
+
+  let pagination = document.getElementById('stok-pagination');
+  if (!pagination) return;
+  let buttons = [`<button class="page-btn" ${stokPage === 1 ? 'disabled' : ''} onclick="renderStokPage(${stokPage - 1})">‹</button>`];
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - stokPage) <= 1) {
+      buttons.push(`<button class="page-btn ${i === stokPage ? 'active' : ''}" onclick="renderStokPage(${i})">${i}</button>`);
+    } else if (i === stokPage - 2 || i === stokPage + 2) {
+      buttons.push('<span class="page-ellipsis">...</span>');
     }
   }
+  buttons.push(`<button class="page-btn" ${stokPage === totalPages ? 'disabled' : ''} onclick="renderStokPage(${stokPage + 1})">›</button>`);
+  pagination.innerHTML = buttons.join('');
 }
 
 function renderRemoteScanner(c) {
@@ -1089,6 +1262,7 @@ function renderManager() {
 }
 
 async function showManagerView(v) {
+  closeSidebar();
   await stopQR();  // FIX: pastikan kamera mati
   let c = document.getElementById('manager-content');
   setActiveNav(v);
