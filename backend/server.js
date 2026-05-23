@@ -9,36 +9,15 @@ const path = require('path');
 const { Server } = require('socket.io');
 const os = require('os');
 
-// Port lama:
-// const PORT = process.env.PORT || 3000;
-// const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
-//
-// HP/hotspot pada beberapa perangkat memblokir port 3443, sementara 3000
-// sudah terbukti bisa diakses. Karena kamera browser HP butuh HTTPS, HTTPS
-// dipindah ke 3000 dan HTTP disediakan di 3001 untuk akses biasa/debug.
-const PORT = process.env.PORT || 3001;
-const HTTPS_PORT = process.env.HTTPS_PORT || 3000;
+const PORT = process.env.PORT || 3000;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 
 // Get local IP address
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
-
-  // IP lama yang sempat terambil:
-  // return '192.168.56.1'; // Adapter virtual/Ethernet, biasanya tidak bisa diakses HP lewat Wi-Fi.
-
-  const preferredNames = ['wi-fi', 'wifi', 'wireless', 'wlan'];
   for (const name of Object.keys(interfaces)) {
-    if (!preferredNames.some((label) => name.toLowerCase().includes(label))) continue;
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('192.168.56.')) {
         return iface.address;
       }
     }
