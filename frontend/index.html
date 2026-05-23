@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="StockFlow - Sistem Manajemen Stok Barang">
+  <title>StockFlow — Sistem Manajemen Stok</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- LOGIN PAGE -->
+  <div id="login-page" class="page login-page active">
+    <div class="login-container">
+      <!-- Left: Illustration -->
+      <div class="login-left">
+        <img src="warehouse-illustration.png" alt="Warehouse Worker" class="login-illustration">
+      </div>
+
+      <!-- Right: Form -->
+      <div class="login-right">
+        <div class="login-card">
+          <h2 class="login-title">Welcome Back</h2>
+          <p class="login-subtitle">Please enter your credentials to access the dashboard.</p>
+
+          <div class="role-tabs">
+            <button type="button" class="tab-btn active" id="tab-karyawan">Karyawan</button>
+            <button type="button" class="tab-btn" id="tab-manager">Manager</button>
+          </div>
+
+          <div id="login-error" class="error-msg"></div>
+
+          <form id="login-form" autocomplete="off">
+            <div class="form-field">
+              <label for="login-username">User ID / Email</label>
+              <div class="field-input">
+                <span class="field-icon">👤</span>
+                <input type="text" id="login-username" placeholder="Enter your ID" required>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <div class="label-row">
+                <label for="login-password">Password</label>
+                <a href="#" class="forgot-link" onclick="handleForgot(event)">Forgot?</a>
+              </div>
+              <div class="field-input">
+                <span class="field-icon">🔒</span>
+                <input type="password" id="login-password" placeholder="••••••••" required>
+                <span class="field-icon-right" id="toggle-password" onclick="togglePasswordVisibility()">👁️</span>
+              </div>
+            </div>
+
+            <button type="submit" class="btn-login" id="btn-login">Log In</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KARYAWAN DASHBOARD -->
+  <div id="karyawan-page" class="page dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <div class="logo-icon">📦</div>
+          <div>
+            <h2>WarehouseOps</h2>
+            <span class="role-subtitle">Operational Staff</span>
+          </div>
+        </div>
+      </div>
+      <ul class="sidebar-nav" id="karyawan-nav">
+        <!-- Rendered by JS -->
+      </ul>
+      <div class="sidebar-footer">
+        <button class="nav-item danger-btn" onclick="doLogout()">
+          <span class="nav-icon">🚪</span> Logout
+        </button>
+      </div>
+    </aside>
+    
+    <div class="main-area">
+      <header class="topbar">
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Cari data pengiriman...">
+        </div>
+        <div class="topbar-right">
+          <div class="profile-info">
+            <div class="profile-text">
+              <span class="name">Budi Santoso</span>
+              <span class="id-text">ID: KWY-0021</span>
+            </div>
+            <div class="avatar" onclick="showKaryawanView('profile')">B</div>
+          </div>
+        </div>
+      </header>
+      <main class="main-content" id="karyawan-content"></main>
+    </div>
+  </div>
+
+  <!-- MANAGER DASHBOARD -->
+  <div id="manager-page" class="page dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <div class="logo-icon">📦</div>
+          <div>
+            <h2>WarehouseOps</h2>
+            <span class="role-subtitle">Manager</span>
+          </div>
+        </div>
+      </div>
+      <ul class="sidebar-nav" id="manager-nav">
+        <!-- Rendered by JS -->
+      </ul>
+      <div class="sidebar-footer">
+        <button class="nav-item danger-btn" onclick="doLogout()">
+          <span class="nav-icon">🚪</span> Logout
+        </button>
+      </div>
+    </aside>
+    
+    <div class="main-area">
+      <header class="topbar">
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Cari aktivitas...">
+        </div>
+        <div class="topbar-right">
+          <div class="profile-info">
+            <div class="profile-text">
+              <span class="name">Admin User</span>
+              <span class="id-text">ID: MGR-001</span>
+            </div>
+            <div class="avatar" onclick="showManagerView('profile')">A</div>
+          </div>
+        </div>
+      </header>
+      <main class="main-content" id="manager-content"></main>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div id="modal-overlay" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-icon success">✅</div>
+      <h3>Title</h3>
+      <p>Message</p>
+      <div class="modal-actions"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "db:push": "node node_modules/prisma/build/index.js db push --schema=prisma/schema.prisma",
+    "db:migrate": "node node_modules/prisma/build/index.js migrate dev --schema=prisma/schema.prisma",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "node node_modules/prisma/build/index.js studio --schema=prisma/schema.prisma"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "StockFlow Backend — Express + Prisma + MySQL",
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
+  "dependencies": {
+    "bwip-js": "^4.10.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "node-forge": "^1.4.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.14.0",
+    "prisma": "^5.14.0"
+  }
+}
