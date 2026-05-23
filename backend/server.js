@@ -11,26 +11,37 @@ const os = require('os');
 
 const PORT = process.env.PORT || 3000;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
+const HOST = process.env.HOST || '0.0.0.0';
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
 
-// Get local IP address
-function getLocalIP() {
+function getLocalIPs() {
   const interfaces = os.networkInterfaces();
+  const addresses = [];
+
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+        addresses.push({ name, address: iface.address });
       }
     }
   }
 
-  return '127.0.0.1';
+  return addresses;
 }
 
-// Generate self-signed cert jika belum ada
+// Pilih IP yang paling mungkin bisa diakses device lain.
+// Adapter virtual seperti VirtualBox biasanya tidak bisa dipakai untuk teman beda jaringan.
+function getLocalIP() {
+  const addresses = getLocalIPs();
+  const wifi = addresses.find((iface) => /wi-?fi|wireless/i.test(iface.name));
+  return (wifi || addresses[0] || { address: '127.0.0.1' }).address;
+}
+
 function ensureCert() {
   const certPath = path.join(__dirname, 'cert.pem');
   const keyPath = path.join(__dirname, 'key.pem');
   const localIP = getLocalIP();
+  const localIPs = getLocalIPs().map((iface) => iface.address);
   let shouldGenerate = !fs.existsSync(certPath) || !fs.existsSync(keyPath);
 
   if (!shouldGenerate) {
@@ -38,8 +49,8 @@ function ensureCert() {
       const forge = require('node-forge');
       const cert = forge.pki.certificateFromPem(fs.readFileSync(certPath, 'utf8'));
       const san = cert.extensions.find((ext) => ext.name === 'subjectAltName');
-      const hasCurrentIP = san && san.altNames && san.altNames.some((alt) => alt.ip === localIP);
-      shouldGenerate = !hasCurrentIP;
+      const certIPs = san && san.altNames ? san.altNames.map((alt) => alt.ip).filter(Boolean) : [];
+      shouldGenerate = !localIPs.every((ip) => certIPs.includes(ip));
     } catch (e) {
       shouldGenerate = true;
     }
@@ -68,9 +79,10 @@ function ensureCert() {
         altNames: [
           { type: 2, value: 'localhost' },
           { type: 7, ip: '127.0.0.1' },
+          ...localIPs.map((ip) => ({ type: 7, ip })),
           { type: 7, ip: localIP },
-        ]
-      }
+        ],
+      },
     ]);
     cert.sign(keys.privateKey, forge.md.sha256.create());
 
@@ -85,14 +97,11 @@ function ensureCert() {
   };
 }
 
-// Load or generate SSL cert
 const ssl = ensureCert();
-
-// Create servers
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer(ssl, app);
 
-// Socket.IO — attached ke KEDUA server agar scan barcode lintas device
+// Socket.IO attached ke kedua server agar scan barcode lintas device tetap jalan.
 const io = new Server({ cors: { origin: '*' } });
 io.attach(httpServer);
 io.attach(httpsServer);
@@ -110,19 +119,21 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start both servers
 const ip = getLocalIP();
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, HOST, () => {
   console.log('');
   console.log('✅ StockFlow Server berjalan!');
   console.log('═══════════════════════════════════════════════');
-  console.log(`📦 Laptop (HTTP)  : http://localhost:${PORT}`);
+  console.log(`📦 Laptop (HTTP)        : http://localhost:${PORT}`);
+  console.log(`🌐 Jaringan lokal HTTP  : http://${ip}:${PORT}`);
+  if (PUBLIC_URL) console.log(`🔗 Public Tunnel        : ${PUBLIC_URL}`);
 });
 
-httpsServer.listen(HTTPS_PORT, () => {
-  console.log(`📱 HP Scan (HTTPS): https://${ip}:${HTTPS_PORT}`);
+httpsServer.listen(HTTPS_PORT, HOST, () => {
+  console.log(`📱 HP satu Wi-Fi HTTPS  : https://${ip}:${HTTPS_PORT}`);
   console.log('═══════════════════════════════════════════════');
-  console.log('💡 Di HP: Buka link HTTPS → "Lanjutkan/Advanced" → Proceed');
+  console.log('💡 Beda jaringan: gunakan tunnel publik, contoh: ngrok http 3000');
+  console.log('💡 Kamera HP aman lewat HTTPS tunnel publik atau HTTPS lokal.');
   console.log('');
 });
