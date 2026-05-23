@@ -113,6 +113,7 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   let p = document.getElementById(id);
   if (p) p.classList.add('active');
+  document.body.classList.toggle('login-mode', id === 'login-page');
   document.body.classList.toggle('dashboard-mode', id === 'karyawan-page' || id === 'manager-page');
   closeSidebar();
 }

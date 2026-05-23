@@ -52,6 +52,11 @@ body.dashboard-mode {
   overflow: hidden;
 }
 
+body.login-mode {
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* ═══ PAGE SYSTEM ═══ */
 .page { display: none; min-height: 100vh; visibility: hidden; }
 .page.active { display: flex; visibility: visible; animation: fadeIn 0.3s ease; }
@@ -72,14 +77,17 @@ body.dashboard-mode {
   align-items: stretch;
   justify-content: center;
   padding: 0;
+  height: 100vh;
   overflow: hidden;
 }
 
 .login-container {
   display: flex;
   width: 100%;
+  max-width: 1440px;
   min-height: 100vh;
   height: 100vh;
+  overflow: hidden;
 }
 
 /* Left half — illustration */
@@ -89,7 +97,8 @@ body.dashboard-mode {
   align-items: center;
   justify-content: center;
   background: #FFFFFF;
-  padding: 60px;
+  min-width: 0;
+  padding: clamp(28px, 4vw, 60px);
 }
 
 .login-illustration {
@@ -107,7 +116,8 @@ body.dashboard-mode {
   justify-content: center;
   align-items: center;
   background: #FFFFFF;
-  padding: 60px 80px;
+  min-width: 0;
+  padding: clamp(24px, 5vw, 60px) clamp(24px, 6vw, 80px);
 }
 
 /* Brand header above card */
@@ -131,9 +141,11 @@ body.dashboard-mode {
 .login-card {
   background: #FFC107;
   border-radius: 16px;
-  padding: 36px 32px;
+  padding: clamp(24px, 3vw, 36px) clamp(22px, 3vw, 32px);
   width: 100%;
   max-width: 420px;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
 }
 
 .login-title {
@@ -968,6 +980,18 @@ tbody tr:hover { background: #FAFBFE; }
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 768px) {
+  body.login-mode {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .login-page.active {
+    height: 100svh;
+    min-height: 100svh;
+  }
+
   .dashboard-layout {
     height: 100vh;
   }
@@ -1077,15 +1101,89 @@ tbody tr:hover { background: #FAFBFE; }
 
   .login-container {
     flex-direction: column;
-    height: auto;
+    height: 100svh;
+    min-height: 100svh;
+    overflow: hidden;
   }
   .login-left {
-    padding: 40px 20px;
+    flex: 0 0 31svh;
+    padding: 14px 20px 4px;
   }
   .login-illustration {
-    max-width: 280px;
+    width: min(52vw, 210px);
+    max-width: 210px;
+    max-height: 25svh;
   }
   .login-right {
-    padding: 30px 20px;
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 8px 18px 18px;
+  }
+  .login-card {
+    max-width: 380px;
+    max-height: calc(69svh - 24px);
+    padding: 20px 18px;
+    border-radius: 14px;
+  }
+  .login-title {
+    font-size: 22px;
+  }
+  .login-subtitle {
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+  .role-tabs {
+    margin-bottom: 14px;
+  }
+  .form-field {
+    margin-bottom: 12px;
+  }
+  .field-input input {
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+  .btn-login {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 380px), (max-height: 700px) {
+  .login-left {
+    flex-basis: 24svh;
+    padding-top: 10px;
+  }
+  .login-illustration {
+    width: min(46vw, 160px);
+    max-height: 19svh;
+  }
+  .login-right {
+    padding: 6px 14px 14px;
+  }
+  .login-card {
+    max-height: calc(76svh - 18px);
+    padding: 16px 15px;
+  }
+  .login-title {
+    font-size: 20px;
+  }
+  .login-subtitle {
+    display: none;
+  }
+  .role-tabs,
+  .form-field {
+    margin-bottom: 10px;
+  }
+  .form-field label,
+  .forgot-link {
+    font-size: 11px;
+  }
+  .field-input input {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 13px;
+  }
+  .btn-login {
+    padding: 11px;
   }
 }

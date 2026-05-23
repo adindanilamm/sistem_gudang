@@ -1,0 +1,6 @@
+node_modules/
+.env
+
+# Sertifikat lokal hasil generate untuk HTTPS development.
+backend/cert.pem
+backend/key.pem
