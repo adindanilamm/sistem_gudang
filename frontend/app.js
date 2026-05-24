@@ -1562,9 +1562,18 @@ function viewItemDetail(kode) {
 }
 
 // MANAGER
-let managerItemsPage = 1;
-let managerItemsMeta = { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
-let managerItems = [];
+let managerReportPage = 1;
+let managerReport = {
+  rows: [],
+  totals: { stokAwal: 0, masuk: 0, keluar: 0, sisaStok: 0 },
+  page: 1,
+  limit: PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  generatedAt: null,
+};
+let managerReportStart = getMonthStartInput();
+let managerReportEnd = getTodayInput();
 
 function renderManager() {
   if (!currentUser) return;
@@ -1575,7 +1584,7 @@ function renderManager() {
 
   let nav = document.getElementById('manager-nav');
   nav.innerHTML = `
-    <li><button class="nav-item active" id="nav-stok" onclick="showManagerView('stok')"><span class="nav-icon">${faIcon('chart-simple')}</span> Data Barang</button></li>
+    <li><button class="nav-item active" id="nav-stok" onclick="showManagerView('stok')"><span class="nav-icon">${faIcon('clipboard-list')}</span> Laporan Stok</button></li>
   `;
 }
 
@@ -1592,7 +1601,7 @@ async function showManagerView(v) {
   }
 
   if (v === 'stok') {
-    await loadManagerItems(managerItemsPage);
+    await loadManagerItems(managerReportPage);
   }
   else if (v === 'profile') { showProfile('manager-content') }
   else if (v === 'password') { showChangePassword('manager-content') }
@@ -1612,92 +1621,219 @@ async function loadManagerItems(page = 1) {
   let c = document.getElementById('manager-content');
   if (!c) return;
 
-  managerItemsPage = Math.max(1, page);
+  managerReportPage = Math.max(1, page);
   const panel = getManagerItemsPanel();
   panel.innerHTML = `
     <div class="content-header">
-      <h2>Data Barang</h2>
-      <p>Memuat data barang dari database...</p>
+      <h2>Laporan Stok</h2>
+      <p>Memuat rincian stok dari database...</p>
     </div>
-    <div class="empty-state">Memuat data barang...</div>
+    <div class="empty-state">Memuat laporan stok...</div>
   `;
 
   try {
-    const res = await apiFetch(`${API_URL}/items?page=${managerItemsPage}&limit=${PAGE_SIZE}`);
-    managerItems = Array.isArray(res) ? res : (res.data || []);
-    managerItemsMeta = Array.isArray(res)
-      ? { page: 1, limit: PAGE_SIZE, total: managerItems.length, totalPages: 1 }
-      : res;
+    const startInput = document.getElementById('manager-report-start');
+    const endInput = document.getElementById('manager-report-end');
+    if (startInput) managerReportStart = startInput.value || managerReportStart;
+    if (endInput) managerReportEnd = endInput.value || managerReportEnd;
+
+    const params = new URLSearchParams({
+      page: String(managerReportPage),
+      limit: String(PAGE_SIZE),
+      startDate: managerReportStart || '',
+      endDate: managerReportEnd || '',
+    });
+    managerReport = await apiFetch(`${API_URL}/dashboard/stock-report?${params.toString()}`);
     renderManagerItemsTable(c);
   } catch (e) {
-    console.error('[Manager] Gagal memuat items:', e);
-    getManagerItemsPanel().innerHTML = renderPageError('Data barang gagal dimuat', e.message);
+    console.error('[Manager] Gagal memuat laporan stok:', e);
+    getManagerItemsPanel().innerHTML = renderPageError('Laporan stok gagal dimuat', `${e.message}. Restart backend jika endpoint laporan belum aktif.`);
   }
 }
 
 function renderManagerItemsTable(c) {
   let panel = getManagerItemsPanel();
-  const page = managerItemsMeta.page || managerItemsPage;
-  const limit = managerItemsMeta.limit || PAGE_SIZE;
-  const total = managerItemsMeta.total || managerItems.length;
-  const totalPages = managerItemsMeta.totalPages || 1;
+  const report = managerReport || {};
+  const rowsData = report.rows || [];
+  const totals = report.totals || { stokAwal: 0, masuk: 0, keluar: 0, sisaStok: 0 };
+  const page = report.page || managerReportPage;
+  const limit = report.limit || PAGE_SIZE;
+  const total = report.total || rowsData.length;
+  const totalPages = report.totalPages || 1;
   const start = total ? ((page - 1) * limit) + 1 : 0;
   const end = total ? Math.min(page * limit, total) : 0;
+  const periodLabel = `${formatReportDate(managerReportStart)} - ${formatReportDate(managerReportEnd)}`;
 
-  const rows = managerItems.length ? managerItems.map((item, index) => `
+  const rows = rowsData.length ? rowsData.map((item, index) => `
     <tr>
       <td>${start + index}</td>
-      <td><strong>${item.kode || '-'}</strong></td>
+      <td><strong class="report-sku">${item.kode || '-'}</strong></td>
       <td>${item.nama || '-'}</td>
-      <td>${item.satuan || '-'}</td>
-      <td>${formatDateTime(item.created_at)}</td>
-      <td>${formatDateTime(item.updated_at)}</td>
+      <td>${formatReportNumber(item.stokAwal)} ${item.satuan || ''}</td>
+      <td class="report-in">${formatReportNumber(item.masuk)}</td>
+      <td class="report-out">${formatReportNumber(item.keluar)}</td>
+      <td class="report-stock">${formatReportNumber(item.sisaStok)}</td>
     </tr>
   `).join('') : `
-    <tr><td colspan="6" style="text-align:center;padding:32px;color:#64748B;">Belum ada data barang.</td></tr>
+    <tr><td colspan="7" style="text-align:center;padding:32px;color:#64748B;">Belum ada data laporan.</td></tr>
   `;
 
   panel.innerHTML = `
-    <div class="content-header manager-items-header-inline">
-      <div>
-        <h2>Data Barang</h2>
-        <p>Data diambil bertahap dari database, ${PAGE_SIZE} data per halaman.</p>
+    <div class="manager-report-shell">
+      <div class="manager-report-toolbar">
+        <div class="manager-period-card">
+          <label>Pilih Periode Laporan</label>
+          <div class="manager-period-inputs">
+            <input type="date" id="manager-report-start" class="form-control" value="${managerReportStart}">
+            <span>s/d</span>
+            <input type="date" id="manager-report-end" class="form-control" value="${managerReportEnd}">
+            <button class="btn btn-blue" onclick="loadManagerItems(1)">${faIcon('filter')} Tampilkan Data</button>
+          </div>
+        </div>
+        <div class="manager-print-card">
+          <button class="btn btn-primary manager-print-btn" onclick="printManagerStockReport()">${faIcon('print')} Cetak Laporan</button>
+        </div>
       </div>
-      <button class="btn btn-primary" onclick="loadManagerItems(${page})">Refresh</button>
-    </div>
 
-    <div class="manager-summary-row">
-      <div class="manager-summary-item"><span>Total Data</span><strong>${total}</strong></div>
-      <div class="manager-summary-item"><span>Halaman</span><strong>${page} / ${totalPages}</strong></div>
-      <div class="manager-summary-item"><span>Ditampilkan</span><strong>${start}-${end}</strong></div>
-    </div>
-
-    <div class="table-wrapper manager-table-card">
-      <div class="table-header-toolbar">
-        <h3>Daftar Barang</h3>
-        <span id="manager-items-page-info">Menampilkan ${start}-${end} dari ${total} data</span>
+      <div class="manager-report-card">
+        <div class="manager-report-title">${faIcon('table')} Detail Rincian Stok</div>
+        <div class="manager-report-meta">Periode: ${periodLabel} • Menampilkan ${start}-${end} dari ${total} SKU</div>
+        <div class="manager-report-table-wrap">
+          <table class="manager-report-table">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>SKU</th>
+                <th>Nama Barang</th>
+                <th>Stok Awal</th>
+                <th>Masuk</th>
+                <th>Keluar</th>
+                <th>Sisa Stok</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3">Total Movement Summary</td>
+                <td>${formatReportNumber(totals.stokAwal)}</td>
+                <td>${formatReportNumber(totals.masuk)}</td>
+                <td>${formatReportNumber(totals.keluar)}</td>
+                <td>${formatReportNumber(totals.sisaStok)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
-      <table>
-        <thead class="table-header-dark">
-          <tr>
-            <th>No</th>
-            <th>Kode</th>
-            <th>Nama Barang</th>
-            <th>Satuan</th>
-            <th>Created At</th>
-            <th>Updated At</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
 
-    <div class="pagination manager-pagination">
-      <button class="page-btn" ${page <= 1 ? 'disabled' : ''} onclick="loadManagerItems(${page - 1})">‹</button>
-      <span class="page-ellipsis">Page ${page} of ${totalPages}</span>
-      <button class="page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="loadManagerItems(${page + 1})">›</button>
+      <div class="pagination manager-pagination">
+        <button class="page-btn" ${page <= 1 ? 'disabled' : ''} onclick="loadManagerItems(${page - 1})">‹</button>
+        <span class="page-ellipsis">Page ${page} of ${totalPages}</span>
+        <button class="page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="loadManagerItems(${page + 1})">›</button>
+      </div>
     </div>
   `;
+}
+
+function printManagerStockReport() {
+  const report = managerReport || {};
+  const rows = report.rows || [];
+  if (!rows.length) {
+    showModal('warning', 'warning', 'Laporan Kosong', 'Tidak ada data laporan untuk dicetak.', [{ l: 'OK' }]);
+    return;
+  }
+
+  const totals = report.totals || { stokAwal: 0, masuk: 0, keluar: 0, sisaStok: 0 };
+  const generatedAt = report.generatedAt || new Date().toISOString();
+  const reportId = `RPT-STK-${new Date(generatedAt).getFullYear()}-${String(report.page || 1).padStart(3, '0')}`;
+  const periodLabel = `${formatReportDate(managerReportStart)} - ${formatReportDate(managerReportEnd)}`;
+  let existing = document.getElementById('printable-report');
+  if (existing) existing.remove();
+
+  const printable = document.createElement('div');
+  printable.id = 'printable-report';
+  printable.innerHTML = `
+    <div class="print-report-page">
+      <div class="print-report-header">
+        <div>
+          <h1>Laporan<br>Mutasi Stok</h1>
+          <p>Periode: ${periodLabel}</p>
+        </div>
+        <div class="print-report-meta">
+          <p>Generated on: ${formatDateTime(generatedAt)}</p>
+          <p>User: ${currentUser ? currentUser.name : 'Warehouse Manager'}</p>
+          <p>Ref ID: ${reportId}</p>
+        </div>
+      </div>
+      <div class="print-report-line"></div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>SKU</th>
+            <th>Nama Barang</th>
+            <th>Stok Awal</th>
+            <th>Jumlah Barang<br>Masuk/Keluar</th>
+            <th>Sisa Stok</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${row.kode}</td>
+              <td class="text-left">${row.nama}</td>
+              <td>${formatReportNumber(row.stokAwal)}</td>
+              <td>${formatReportNumber(row.masuk)} / ${formatReportNumber(row.keluar)}</td>
+              <td>${formatReportNumber(row.sisaStok)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3">TOTAL MOVEMENT</td>
+            <td>${formatReportNumber(totals.stokAwal)}</td>
+            <td>${formatReportNumber(totals.masuk)} / ${formatReportNumber(totals.keluar)}</td>
+            <td>${formatReportNumber(totals.sisaStok)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="print-signatures">
+        <div class="sig-box"><p>Dibuat Oleh,</p><div class="sig-line"></div><p>Warehouse Admin</p><span>ID: LT-ADM-04</span></div>
+        <div class="sig-box"><p>Diperiksa Oleh,</p><div class="sig-line"></div><p>Inventory Control</p><span>ID: LT-INC-02</span></div>
+        <div class="sig-box"><p>Disetujui Oleh,</p><div class="sig-line"></div><p>Operations Manager</p><span>ID: LT-MGR-01</span></div>
+      </div>
+      <div class="print-footer">© 2026 WarehouseOps. Page 1 of 1</div>
+    </div>
+  `;
+  document.body.appendChild(printable);
+  document.body.classList.add('printing-report');
+  window.onafterprint = () => {
+    document.body.classList.remove('printing-report');
+    let report = document.getElementById('printable-report');
+    if (report) report.remove();
+  };
+  window.print();
+}
+
+function getTodayInput() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getMonthStartInput() {
+  const date = new Date();
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatReportDate(value) {
+  if (!value) return '-';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatReportNumber(value) {
+  return Number(value || 0).toLocaleString('id-ID');
 }
 
 function renderPageError(title, message) {
