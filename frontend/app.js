@@ -149,7 +149,7 @@ if (socket) {
         }
       } else if (currentUser.role === 'manager') {
         if (currentManagerView === 'stok') {
-          loadManagerItems(managerItemsPage);
+          loadManagerItems(managerReportPage);
         }
       }
     }
@@ -1621,6 +1621,11 @@ async function loadManagerItems(page = 1) {
   let c = document.getElementById('manager-content');
   if (!c) return;
 
+  const startInput = document.getElementById('manager-report-start');
+  const endInput = document.getElementById('manager-report-end');
+  if (startInput) managerReportStart = startInput.value || managerReportStart;
+  if (endInput) managerReportEnd = endInput.value || managerReportEnd;
+
   managerReportPage = Math.max(1, page);
   const panel = getManagerItemsPanel();
   panel.innerHTML = `
@@ -1632,11 +1637,6 @@ async function loadManagerItems(page = 1) {
   `;
 
   try {
-    const startInput = document.getElementById('manager-report-start');
-    const endInput = document.getElementById('manager-report-end');
-    if (startInput) managerReportStart = startInput.value || managerReportStart;
-    if (endInput) managerReportEnd = endInput.value || managerReportEnd;
-
     const params = new URLSearchParams({
       page: String(managerReportPage),
       limit: String(PAGE_SIZE),
@@ -1649,6 +1649,29 @@ async function loadManagerItems(page = 1) {
     console.error('[Manager] Gagal memuat laporan stok:', e);
     getManagerItemsPanel().innerHTML = renderPageError('Laporan stok gagal dimuat', `${e.message}. Restart backend jika endpoint laporan belum aktif.`);
   }
+}
+
+function applyManagerReportFilter() {
+  const startInput = document.getElementById('manager-report-start');
+  const endInput = document.getElementById('manager-report-end');
+  const startValue = startInput ? startInput.value : '';
+  const endValue = endInput ? endInput.value : '';
+  const startDate = parseDateInputLocal(startValue);
+  const endDate = parseDateInputLocal(endValue);
+
+  if (!startValue || !endValue || !startDate || !endDate) {
+    showModal('warning', 'warning', 'Periode Belum Lengkap', 'Tanggal mulai dan tanggal akhir laporan wajib diisi.', [{ l: 'OK' }]);
+    return;
+  }
+
+  if (startDate > endDate) {
+    showModal('warning', 'warning', 'Periode Tidak Valid', 'Tanggal mulai tidak boleh lebih besar dari tanggal akhir.', [{ l: 'OK' }]);
+    return;
+  }
+
+  managerReportStart = startValue;
+  managerReportEnd = endValue;
+  loadManagerItems(1);
 }
 
 function renderManagerItemsTable(c) {
@@ -1687,7 +1710,7 @@ function renderManagerItemsTable(c) {
             <input type="date" id="manager-report-start" class="form-control" value="${managerReportStart}">
             <span>s/d</span>
             <input type="date" id="manager-report-end" class="form-control" value="${managerReportEnd}">
-            <button class="btn btn-blue" onclick="loadManagerItems(1)">${faIcon('filter')} Tampilkan Data</button>
+            <button class="btn btn-blue" onclick="applyManagerReportFilter()">${faIcon('filter')} Tampilkan Data</button>
           </div>
         </div>
         <div class="manager-print-card">
@@ -1816,19 +1839,38 @@ function printManagerStockReport() {
 }
 
 function getTodayInput() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateInputLocal(new Date());
 }
 
 function getMonthStartInput() {
   const date = new Date();
   date.setDate(1);
-  return date.toISOString().slice(0, 10);
+  return toDateInputLocal(date);
+}
+
+function toDateInputLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputLocal(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
 }
 
 function formatReportDate(value) {
   if (!value) return '-';
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
+  const date = parseDateInputLocal(value);
+  if (!date) return value;
   return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
