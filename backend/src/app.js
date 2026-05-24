@@ -16,6 +16,31 @@ app.use(cors());
 app.use(express.json());
 
 // ================================================================
+// Auto-redirect HTTP → HTTPS untuk akses dari HP (non-localhost)
+// Kamera memerlukan secure context (HTTPS). Tanpa redirect ini,
+// HP akan mendapat blank page atau kamera tidak berfungsi.
+// ================================================================
+app.use((req, res, next) => {
+  const host = req.hostname || req.headers.host;
+  const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+  const isHTTPS = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
+  if (!isLocalhost && !isHTTPS) {
+    const httpsPort = process.env.HTTPS_PORT || 3443;
+    const httpsUrl = `https://${host}:${httpsPort}${req.originalUrl}`;
+    return res.redirect(301, httpsUrl);
+  }
+  next();
+});
+
+// Browser debugging log endpoint
+app.post('/api/log', (req, res) => {
+  console.log('🖥️ [Browser Log]:', req.body.log);
+  res.sendStatus(200);
+});
+
+
+// ================================================================
 // Static Files (Frontend)
 // ================================================================
 // app.js berada di dalam /src, sehingga frontend ada di ../../frontend

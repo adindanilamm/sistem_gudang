@@ -3,14 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="description" content="StockFlow - Sistem Manajemen Stok Barang">
   <title>StockFlow — Sistem Manajemen Stok</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Inline CSS fallback: login page tampil meskipun JS gagal load -->
+  <style>
+    /* Fallback: login page visible by default, akan di-override oleh style.css+JS */
+    #login-page { display: flex !important; visibility: visible !important; }
+    .page:not(#login-page) { display: none !important; visibility: hidden !important; }
+    /* Setelah JS berhasil load, class ini akan mengontrol visibility */
+    body.js-loaded #login-page { display: none !important; visibility: hidden !important; }
+    body.js-loaded .page.active { display: flex !important; visibility: visible !important; }
+    body.js-loaded .page:not(.active) { display: none !important; visibility: hidden !important; }
+  </style>
 </head>
 <body>
+  <noscript>
+    <div style="padding:40px;text-align:center;font-family:sans-serif;">
+      <h2>⚠️ JavaScript Diperlukan</h2>
+      <p>Aplikasi StockFlow memerlukan JavaScript untuk berfungsi. Silakan aktifkan JavaScript di pengaturan browser Anda.</p>
+    </div>
+  </noscript>
   <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
 
   <!-- LOGIN PAGE -->
@@ -158,8 +176,18 @@
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- Socket.IO: coba load dari server dulu, fallback ke CDN -->
+  <script src="/socket.io/socket.io.js" onerror="
+    var s=document.createElement('script');
+    s.src='https://cdn.socket.io/4.7.5/socket.io.min.js';
+    s.onerror=function(){console.warn('Socket.IO CDN juga gagal load')};
+    document.head.appendChild(s);
+  "></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="app.js"></script>
+  <script>
+    // Tandai bahwa JS sudah berhasil load — aktifkan kontrol visibility via CSS
+    document.body.classList.add('js-loaded');
+  </script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

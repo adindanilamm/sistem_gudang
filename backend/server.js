@@ -114,6 +114,11 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('scanned-barcode', data);
   });
 
+  socket.on('database-updated', (data) => {
+    console.log('📡 Database updated. Broadcasting to other clients...');
+    socket.broadcast.emit('database-updated', data);
+  });
+
   socket.on('disconnect', () => {
     console.log('🔌 Client disconnected:', socket.id);
   });
@@ -124,16 +129,26 @@ const ip = getLocalIP();
 httpServer.listen(PORT, HOST, () => {
   console.log('');
   console.log('✅ StockFlow Server berjalan!');
-  console.log('═══════════════════════════════════════════════');
-  console.log(`📦 Laptop (HTTP)        : http://localhost:${PORT}`);
-  console.log(`🌐 Jaringan lokal HTTP  : http://${ip}:${PORT}`);
-  if (PUBLIC_URL) console.log(`🔗 Public Tunnel        : ${PUBLIC_URL}`);
+  console.log('═══════════════════════════════════════════════════════');
+  console.log(`📦 Laptop (HTTP)         : http://localhost:${PORT}`);
+  console.log(`🌐 Jaringan lokal (HTTP) : http://${ip}:${PORT}`);
+  console.log(`   ↳ Akses dari HP via IP akan otomatis redirect ke HTTPS`);
+  if (PUBLIC_URL) console.log(`🔗 Public Tunnel         : ${PUBLIC_URL}`);
 });
 
 httpsServer.listen(HTTPS_PORT, HOST, () => {
-  console.log(`📱 HP satu Wi-Fi HTTPS  : https://${ip}:${HTTPS_PORT}`);
-  console.log('═══════════════════════════════════════════════');
-  console.log('💡 Beda jaringan: gunakan tunnel publik, contoh: ngrok http 3000');
-  console.log('💡 Kamera HP aman lewat HTTPS tunnel publik atau HTTPS lokal.');
+  console.log(`📱 HP satu Wi-Fi (HTTPS) : https://${ip}:${HTTPS_PORT}`);
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('');
+  console.log('📋 CARA AKSES DARI HP (iOS / Android):');
+  console.log('   1. HP dan laptop harus terhubung Wi-Fi yang sama');
+  console.log(`   2. Buka browser HP, ketik: http://${ip}:${PORT}`);
+  console.log('   3. HP akan otomatis redirect ke HTTPS');
+  console.log('   4. Jika muncul peringatan sertifikat:');
+  console.log('      • Chrome: Ketuk "Advanced" → "Proceed to site"');
+  console.log('      • Safari: Ketuk "Show Details" → "Visit This Website"');
+  console.log('   5. Setelah halaman terbuka, kamera scanner siap digunakan!');
+  console.log('');
+  console.log('💡 Beda jaringan? Gunakan tunnel: ngrok http 3000');
   console.log('');
 });

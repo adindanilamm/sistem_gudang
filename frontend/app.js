@@ -1,15 +1,82 @@
+// Forward browser console logs to backend /api/log
+(function() {
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+
+  function sendLog(type, args) {
+    try {
+      const msg = args.map(a => {
+        if (a instanceof Error) return a.message + '\n' + a.stack;
+        if (typeof a === 'object') {
+          try { return JSON.stringify(a); } catch (e) { return String(a); }
+        }
+        return String(a);
+      }).join(' ');
+      
+      fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ log: `[BROWSER-${type.toUpperCase()}] ${msg}` })
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
+  console.log = function(...args) {
+    originalLog.apply(console, args);
+    sendLog('log', args);
+  };
+  console.error = function(...args) {
+    originalError.apply(console, args);
+    sendLog('error', args);
+  };
+  console.warn = function(...args) {
+    originalWarn.apply(console, args);
+    sendLog('warn', args);
+  };
+
+  // Capture unhandled promise rejections
+  window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled Promise Rejection:', event.reason);
+  });
+})();
+
+window.onerror = function(message, source, lineno, colno, error) {
+  let errDiv = document.createElement('div');
+  errDiv.style.position = 'fixed';
+  errDiv.style.top = '0';
+  errDiv.style.left = '0';
+  errDiv.style.right = '0';
+  errDiv.style.background = 'red';
+  errDiv.style.color = 'white';
+  errDiv.style.padding = '10px';
+  errDiv.style.zIndex = '99999';
+  errDiv.style.fontWeight = 'bold';
+  errDiv.innerHTML = `⚠️ JS Error: ${message} | Line: ${lineno} | File: ${source}`;
+  document.body.appendChild(errDiv);
+  
+  // Send to server
+  console.error(`Uncaught Error: ${message} at ${source}:${lineno}:${colno}`);
+  
+  return false;
+};
+
 const API_URL = window.location.origin + '/api';
 let localUsers = [], localTxns = [], localItems = [];
 
 async function parseApiResponse(res) {
   let data = null;
+  let parsedSuccessfully = true;
   try {
     data = await res.json();
   } catch (e) {
-    data = null;
+    parsedSuccessfully = false;
   }
   if (!res.ok) {
     throw new Error((data && data.error) || `Request gagal (${res.status})`);
+  }
+  if (!parsedSuccessfully) {
+    throw new Error('Gagal mengurai respons JSON dari server.');
   }
   return data;
 }
@@ -19,7 +86,24 @@ async function apiFetch(url, options) {
   return parseApiResponse(res);
 }
 
-const socket = typeof io !== 'undefined' ? io() : null;
+// Socket.IO: auto-detect URL agar HP (HTTPS:3443) dan Laptop (HTTP:3000) sama-sama connect
+let socket = null;
+try {
+  if (typeof io !== 'undefined') {
+    socket = io(window.location.origin, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      timeout: 5000
+    });
+    socket.on('connect', () => console.log('🔌 Socket.IO terhubung:', socket.id));
+    socket.on('connect_error', (err) => console.warn('⚠️ Socket.IO gagal connect:', err.message));
+  }
+} catch (e) {
+  console.warn('Socket.IO init error (diabaikan):', e);
+  socket = null;
+}
 if (socket) {
   socket.on('scanned-barcode', (data) => {
     let type = null;
@@ -40,6 +124,34 @@ if (socket) {
       filterStokTable();
     }
   });
+
+  socket.on('database-updated', async () => {
+    console.log('📡 Real-time update received from another device. Syncing data...');
+    // Refresh data local
+    await fetchAllData();
+    // Render ulang halaman yang sedang aktif agar data langsung muncul
+    if (currentUser) {
+      if (currentUser.role === 'karyawan') {
+        let c = document.getElementById('karyawan-content');
+        if (currentKaryawanView === 'dashboard') {
+          renderKaryawanDashboard(c);
+        } else if (currentKaryawanView === 'stok') {
+          renderStokTable(c);
+        } else if (currentKaryawanView === 'masuk' || currentKaryawanView === 'keluar') {
+          // Render ulang list aktivitas terbaru saja agar form input tidak hilang fokus / reset
+          renderRecent(currentKaryawanView);
+        } else if (currentKaryawanView === 'history-masuk' || currentKaryawanView === 'history-keluar') {
+          renderTransactionHistory(currentKaryawanView.replace('history-', ''), c);
+        }
+      } else if (currentUser.role === 'manager') {
+        let c = document.getElementById('manager-content');
+        if (currentManagerView === 'stok') {
+          renderManagerStok(c);
+          generateLaporan();
+        }
+      }
+    }
+  });
 }
 
 async function fetchAllData() {
@@ -51,18 +163,19 @@ async function fetchAllData() {
     localItems = await parseApiResponse(resI);
     localTxns = await parseApiResponse(resT);
   } catch (e) {
-    console.error('Failed to fetch data', e);
-    showModal('⚠️', 'warning', 'Gagal Memuat Data', e.message || 'Tidak dapat mengambil data dari server.', [{ l: 'OK' }]);
+    console.error('Failed to fetch data:', e);
+    // Jangan showModal di sini — biarkan caller yang memutuskan cara handle error
+    // Ini mencegah cascading modal popup yang memblokir UI
     throw e;
   }
 }
 
-function getUsers() { return localUsers; }
-function getTxns() { return localTxns; }
-function getItems() { return localItems; }
+function getUsers() { return localUsers || []; }
+function getTxns() { return localTxns || []; }
+function getItems() { return localItems || []; }
 function getItemByCode(k) {
   let target = String(k).trim().toUpperCase();
-  return localItems.find(i => String(i.kode).trim().toUpperCase() === target);
+  return (localItems || []).find(i => String(i.kode).trim().toUpperCase() === target);
 }
 
 function getItemDetails(item) {
@@ -97,6 +210,8 @@ function fmtDateShort(d) { return new Date(d).toLocaleDateString('id-ID', { day:
 let currentUser = null, qrScanner = null;
 let stokPage = 1;
 const PAGE_SIZE = 10;
+let currentKaryawanView = 'dashboard';
+let currentManagerView = 'stok';
 // =====================================================================
 // QR SCANNER STATE FLAGS  (FIX: cegah race-condition pada scan ke-2 dst)
 //  - isScannerStarting : mencegah double-start saat user klik 2x cepat
@@ -115,6 +230,7 @@ function showPage(id) {
   if (p) p.classList.add('active');
   document.body.classList.toggle('login-mode', id === 'login-page');
   document.body.classList.toggle('dashboard-mode', id === 'karyawan-page' || id === 'manager-page');
+  document.body.classList.toggle('login-mode', id === 'login-page');
   closeSidebar();
 }
 
@@ -228,11 +344,32 @@ function doLogout() {
     { l: 'Batal', c: 'btn-outline' },
     {
       l: 'Ya, Keluar', c: 'btn-danger', fn: async () => {
-        try { await fetch(`${API_URL}/logout`, { method: 'POST' }); } catch (e) { console.error(e); }
+        try {
+          await fetch(`${API_URL}/logout`, { method: 'POST' }).catch(() => {});
+        } catch (e) { /* abaikan error network */ }
+        
+        // Reset semua state — WAJIB terjadi apapun kondisinya
         currentUser = null;
-        localStorage.removeItem('stockflow_user'); // Hapus Sesi
-        await stopQR();   // FIX: tunggu stop selesai sebelum lanjut
-        showPage('login-page');
+        localUsers = []; localTxns = []; localItems = [];
+        localStorage.removeItem('stockflow_user');
+        
+        try { await stopQR(); } catch (e) { /* abaikan */ }
+        
+        // Pastikan login page SELALU tampil
+        try {
+          hideModal();
+          showPage('login-page');
+          // Reset form login
+          let form = document.getElementById('login-form');
+          if (form) form.reset();
+          let err = document.getElementById('login-error');
+          if (err) err.classList.remove('show');
+        } catch (e) {
+          // Fallback absolut — paksa tampilkan login page
+          document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+          let lp = document.getElementById('login-page');
+          if (lp) lp.classList.add('active');
+        }
       }
     }
   ]);
@@ -272,8 +409,11 @@ async function stopQR() {
 
 // KARYAWAN
 function renderKaryawan() {
-  document.querySelector('#karyawan-page .profile-info .name').textContent = currentUser.name;
-  document.querySelector('#karyawan-page .profile-info .avatar').textContent = currentUser.name.charAt(0);
+  if (!currentUser) return;
+  let nameEl = document.querySelector('#karyawan-page .profile-info .name');
+  let avatarEl = document.querySelector('#karyawan-page .profile-info .avatar');
+  if (nameEl) nameEl.textContent = currentUser.name;
+  if (avatarEl) avatarEl.textContent = currentUser.name.charAt(0);
   
   let nav = document.getElementById('karyawan-nav');
   nav.innerHTML = `
@@ -281,6 +421,7 @@ function renderKaryawan() {
     <li><button class="nav-item" id="nav-masuk" onclick="showKaryawanView('masuk')"><span class="nav-icon">📥</span> Barang Masuk</button></li>
     <li><button class="nav-item" id="nav-keluar" onclick="showKaryawanView('keluar')"><span class="nav-icon">📤</span> Barang Keluar</button></li>
     <li><button class="nav-item" id="nav-stok" onclick="showKaryawanView('stok')"><span class="nav-icon">📋</span> Cek Stok</button></li>
+    <li class="mobile-only-nav"><button class="nav-item" id="nav-scan" onclick="showKaryawanView('scan')"><span class="nav-icon">📷</span> Scan Barcode</button></li>
   `;
 }
 
@@ -323,35 +464,44 @@ function getWeeklyActivity() {
   return days.map(day => ({
     ...day,
     masukHeight: Math.max(day.masuk ? 8 : 2, Math.round((day.masuk / maxValue) * 100)),
-    keluarHeight: Math.max(day.keluar ? 8 : 2, Math.round((day.keluar / maxValue) * 100)),
+    keluarHeight: Math.max(day.keluar ? 8 : 2, Math.round((day.keluar / maxValue) * 100))
   }));
 }
 
 function setActiveNav(idPrefix) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  let activeEl = document.getElementById('nav-' + idPrefix);
-  if(activeEl) activeEl.classList.add('active');
+  let activePage = document.querySelector('.page.active');
+  if (activePage) {
+    let activeEl = activePage.querySelector('#nav-' + idPrefix);
+    if (activeEl) activeEl.classList.add('active');
+  }
 }
 
+
+
+
+
 async function showKaryawanView(v) {
+  currentKaryawanView = v;
   closeSidebar();
-  await stopQR();
+  try { await stopQR(); } catch(e) {}
   let c = document.getElementById('karyawan-content');
   setActiveNav(v);
   
   if (v === 'dashboard') {
-    await fetchAllData();
+    try { await fetchAllData(); } catch(e) { console.warn('Fetch data gagal, render dengan data yang ada:', e); }
     renderKaryawanDashboard(c);
   } else if (v === 'masuk' || v === 'keluar') {
-    await fetchAllData();
+    try { await fetchAllData(); } catch(e) { console.warn('Fetch data gagal:', e); }
     renderItemForm(v, c);
   }
-  else if (v === 'stok') { await fetchAllData(); renderStokTable(c) }
+  else if (v === 'stok') { try { await fetchAllData(); } catch(e) {} renderStokTable(c) }
   else if (v === 'profile') { showProfile('karyawan-content') }
   else if (v === 'password') { showChangePassword('karyawan-content') }
   else if (v === 'tambah-sku') { renderTambahSKU(c) }
+  else if (v === 'scan') { renderRemoteScanner(c) }
   else if (v === 'history-masuk' || v === 'history-keluar') {
-    await fetchAllData();
+    try { await fetchAllData(); } catch(e) {}
     renderTransactionHistory(v.replace('history-', ''), c);
   }
 }
@@ -605,6 +755,12 @@ async function startQR(type) {
         let manualInput = document.getElementById('manual-code-' + type);
         if (manualInput) manualInput.value = cleanCode;
 
+        // Emit barcode ke server agar laptop (client lain) ikut mendeteksi scan secara real-time
+        if (socket) {
+          socket.emit('scan-barcode', { code: cleanCode });
+          if (navigator.vibrate) navigator.vibrate(200);
+        }
+
         // Sembunyikan UI scanner — jangan sentuh state scanner di sini
         wrap.style.display = 'none';
 
@@ -621,12 +777,16 @@ async function startQR(type) {
     );
   } catch (e) {
     console.error('❌ Camera start error:', e);
-    let errorStr = e.message || e || 'Unknown error';
+    let errorStr = e.message || String(e) || 'Unknown error';
     let msg = 'Tidak dapat mengakses kamera. ' + errorStr;
-    if (String(e).toLowerCase().includes('permission')) {
-      msg = 'Izin kamera ditolak. Periksa permission browser.';
-    } else if (String(e).toLowerCase().includes('notfound')) {
+    if (!window.isSecureContext) {
+      msg = 'Kamera memerlukan koneksi HTTPS. Gunakan HTTPS atau localhost untuk menggunakan kamera scanner.';
+    } else if (String(e).toLowerCase().includes('notallowed') || String(e).toLowerCase().includes('permission')) {
+      msg = 'Izin kamera ditolak. Buka Pengaturan browser → izinkan akses Kamera untuk situs ini.';
+    } else if (String(e).toLowerCase().includes('notfound') || String(e).toLowerCase().includes('not found')) {
       msg = 'Kamera tidak ditemukan pada perangkat ini.';
+    } else if (String(e).toLowerCase().includes('notreadable') || String(e).toLowerCase().includes('not readable')) {
+      msg = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain yang menggunakan kamera.';
     }
     showModal('⚠️', 'warning', 'Kamera Error', msg, [{ l: 'OK' }]);
     wrap.style.display = 'none';
@@ -683,6 +843,7 @@ async function registerItem(type, code) {
   try {
     await apiFetch(`${API_URL}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode: code, nama, satuan }) });
     await fetchAllData();
+    if (socket) socket.emit('database-updated', { type: 'item', kode: code });
     lookupItem(type);
   } catch (e) {
     showModal('⚠️', 'warning', 'Gagal Daftar Barang', e.message, [{ l: 'OK' }]);
@@ -700,9 +861,10 @@ async function submitBarang(e, type) {
   try {
     await apiFetch(`${API_URL}/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode, type, jumlah, date, user: currentUser.username }) });
     await fetchAllData();
+    if (socket) socket.emit('database-updated', { type: 'transaction', type_tx: type, kode, jumlah });
 
     let nama = getItemByCode(kode).nama;
-    showModal('?', 'success', 'Berhasil', `${nama} ? Jumlah: ${jumlah} berhasil dicatat.`, [{ l: 'OK', fn: () => renderItemForm(type, document.getElementById('karyawan-content')) }]);
+    showModal('✓', 'success', 'Berhasil', `${nama} — Jumlah: ${jumlah} berhasil dicatat.`, [{ l: 'OK', fn: () => renderItemForm(type, document.getElementById('karyawan-content')) }]);
   } catch (e) {
     showModal('⚠️', 'warning', 'Gagal Simpan Transaksi', e.message, [{ l: 'OK' }]);
   }
@@ -975,7 +1137,7 @@ function renderRemoteScanner(c) {
   c.innerHTML = `<div class="section-panel" style="text-align:center; min-height:80vh; display:flex; flex-direction:column; justify-content:center; align-items:center;">
     <div class="section-header" style="width:100%; justify-content:space-between; margin-bottom: 20px;">
       <h2>📷 Scan Barang</h2>
-      <button class="btn btn-outline btn-sm" onclick="showKaryawanView('menu')">← Kembali</button>
+      <button class="btn btn-outline btn-sm" onclick="showKaryawanView('dashboard')">← Kembali</button>
     </div>
     <p style="color:var(--text-secondary); margin-bottom:20px;">Arahkan kamera ke barcode untuk scan barang.</p>
     
@@ -1062,10 +1224,18 @@ async function startRemoteScanner() {
     );
   } catch (e) {
     console.error(e);
-    let errorStr = e.message || e || 'Unknown error';
+    let errorStr = e.message || String(e) || 'Unknown error';
+    let msg = errorStr;
+    if (!window.isSecureContext) {
+      msg = 'Kamera memerlukan HTTPS. Buka via HTTPS untuk menggunakan scanner.';
+    } else if (String(e).toLowerCase().includes('notallowed') || String(e).toLowerCase().includes('permission')) {
+      msg = 'Izin kamera ditolak. Izinkan akses kamera di pengaturan browser.';
+    } else if (String(e).toLowerCase().includes('notfound')) {
+      msg = 'Kamera tidak ditemukan pada perangkat ini.';
+    }
     let statusEl = document.getElementById('remote-status');
     if(statusEl) {
-      statusEl.innerHTML = `Gagal membuka kamera: ${errorStr}`;
+      statusEl.innerHTML = '❌ ' + msg;
       statusEl.style.color = 'var(--danger)';
     }
   } finally {
@@ -1218,7 +1388,8 @@ async function submitTambahSKU(e) {
   try {
     await apiFetch(`${API_URL}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode, nama, satuan }) });
     await fetchAllData();
-    showModal('?', 'success', 'Berhasil', `Barang "${nama}" (${kode}) berhasil didaftarkan.`, [{ l: 'OK', fn: () => showKaryawanView('stok') }]);
+    if (socket) socket.emit('database-updated', { type: 'item', kode });
+    showModal('✓', 'success', 'Berhasil', `Barang "${nama}" (${kode}) berhasil didaftarkan.`, [{ l: 'OK', fn: () => showKaryawanView('stok') }]);
   } catch (e) {
     showModal('⚠️', 'warning', 'Gagal Tambah SKU', e.message, [{ l: 'OK' }]);
   }
@@ -1253,8 +1424,11 @@ function viewItemDetail(kode) {
 
 // MANAGER
 function renderManager() {
-  document.querySelector('#manager-page .profile-info .name').textContent = currentUser.name;
-  document.querySelector('#manager-page .profile-info .avatar').textContent = currentUser.name.charAt(0);
+  if (!currentUser) return;
+  let nameEl = document.querySelector('#manager-page .profile-info .name');
+  let avatarEl = document.querySelector('#manager-page .profile-info .avatar');
+  if (nameEl) nameEl.textContent = currentUser.name;
+  if (avatarEl) avatarEl.textContent = currentUser.name.charAt(0);
   
   let nav = document.getElementById('manager-nav');
   nav.innerHTML = `
@@ -1263,16 +1437,33 @@ function renderManager() {
 }
 
 async function showManagerView(v) {
+  currentManagerView = v;
   closeSidebar();
-  await stopQR();  // FIX: pastikan kamera mati
+  try { await stopQR(); } catch(e) {} // pastikan kamera mati
   let c = document.getElementById('manager-content');
   setActiveNav(v);
   
   if (v === 'stok') {
     c.innerHTML = '<div class="empty-state">Memuat laporan stok...</div>';
-    await fetchAllData();
+    try {
+      await fetchAllData();
+    } catch (e) {
+      console.error('Gagal fetch data untuk laporan stok:', e);
+      // Tetap lanjut render — tabel akan kosong tapi tidak blank
+    }
     renderManagerStok(c);
-    generateLaporan();
+    // Pastikan date inputs sudah ada di DOM sebelum generate
+    requestAnimationFrame(() => {
+      try {
+        generateLaporan();
+      } catch (e) {
+        console.error('Gagal generate laporan:', e);
+        let container = document.getElementById('laporan-container');
+        if (container) {
+          container.innerHTML = '<div class="empty-state" style="color:var(--danger)">⚠️ Gagal memuat data laporan. Coba klik "Tampilkan Data".</div>';
+        }
+      }
+    });
   }
   else if (v === 'profile') { showProfile('manager-content') }
   else if (v === 'password') { showChangePassword('manager-content') }
@@ -1299,170 +1490,225 @@ function renderManagerStok(c) {
 }
 
 function generateLaporan() {
-  let startDate = document.getElementById('periode-start').value;
-  let endDate = document.getElementById('periode-end').value;
+  try {
+    let startDate = document.getElementById('periode-start').value;
+    let endDate = document.getElementById('periode-end').value;
 
-  if (!startDate || !endDate) return;
+    if (!startDate || !endDate) return;
 
-  let start = new Date(startDate);
-  let end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+    let start = new Date(startDate);
+    let end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
 
-  if (start > end) return;
+    if (start > end) return;
 
-  let allTxns = getTxns();
-  let items = getItems();
+    let allTxns = getTxns();
+    let items = getItems();
 
-  let summary = items.map(item => {
-    let txnsBefore = allTxns.filter(t => t.kode === item.kode && new Date(t.date) < start);
-    let stokAwal = txnsBefore.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0)
-                 - txnsBefore.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
+    let summary = items.map(item => {
+      let txnsBefore = allTxns.filter(t => t.kode === item.kode && new Date(t.date) < start);
+      let stokAwal = txnsBefore.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0)
+                   - txnsBefore.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
 
-    let txnsPeriod = allTxns.filter(t => t.kode === item.kode && new Date(t.date) >= start && new Date(t.date) <= end);
-    let masuk = txnsPeriod.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0);
-    let keluar = txnsPeriod.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
+      let txnsPeriod = allTxns.filter(t => t.kode === item.kode && new Date(t.date) >= start && new Date(t.date) <= end);
+      let masuk = txnsPeriod.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0);
+      let keluar = txnsPeriod.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
 
-    let sisaStok = stokAwal + masuk - keluar;
-    return { ...item, stokAwal, masuk, keluar, sisaStok };
-  });
-  
-  let totalMasuk = summary.reduce((s, i) => s + i.masuk, 0);
-  let totalKeluar = summary.reduce((s, i) => s + i.keluar, 0);
-  let totalSisa = summary.reduce((s, i) => s + i.sisaStok, 0);
+      let sisaStok = stokAwal + masuk - keluar;
+      return { ...item, stokAwal, masuk, keluar, sisaStok };
+    });
+    
+    let totalMasuk = summary.reduce((s, i) => s + i.masuk, 0);
+    let totalKeluar = summary.reduce((s, i) => s + i.keluar, 0);
+    let totalSisa = summary.reduce((s, i) => s + i.sisaStok, 0);
 
-  let rows = summary.length ? summary.map((i, n) => `<tr>
-      <td>${n + 1}</td>
-      <td><strong>${i.kode}</strong></td>
-      <td class="text-left">${i.nama}</td>
-      <td>${i.stokAwal}</td>
-      <td style="color: var(--success); font-weight: 600;">${i.masuk}</td>
-      <td style="color: var(--danger); font-weight: 600;">${i.keluar}</td>
-      <td style="font-weight: 600;">${i.sisaStok}</td>
-    </tr>`).join('')
-    : '<tr><td colspan="7" style="text-align:center;padding:30px;">Belum ada data pada periode ini</td></tr>';
+    let rows = summary.length ? summary.map((i, n) => `<tr>
+        <td>${n + 1}</td>
+        <td><strong>${i.kode}</strong></td>
+        <td class="text-left">${i.nama}</td>
+        <td>${i.stokAwal}</td>
+        <td style="color: var(--success); font-weight: 600;">${i.masuk}</td>
+        <td style="color: var(--danger); font-weight: 600;">${i.keluar}</td>
+        <td style="font-weight: 600;">${i.sisaStok}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="7" style="text-align:center;padding:30px;">Belum ada data pada periode ini</td></tr>';
 
-  let periodeText = new Date(startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-    + ' - ' + new Date(endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    let periodeText = new Date(startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+      + ' - ' + new Date(endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  let container = document.getElementById('laporan-container');
-  container.innerHTML = `
-    <div class="table-wrapper no-print">
-      <div style="background:#0A1B33; color:white; padding:15px 20px; font-weight:600; text-align:center;">📋 Detail Rincian Stok</div>
-      <table>
-        <thead style="background:#F8FAFC;">
-          <tr>
-            <th>No</th>
-            <th>SKU</th>
-            <th>NAMA BARANG</th>
-            <th>STOK AWAL</th>
-            <th>MASUK</th>
-            <th>KELUAR</th>
-            <th>SISA STOK</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-        <tfoot style="background:#FFF8E1; font-weight:700;">
-          <tr>
-            <td colspan="4" style="text-align:right; font-size:12px; letter-spacing:0.5px;">TOTAL MOVEMENT SUMMARY</td>
-            <td style="color:var(--success)">${totalMasuk}</td>
-            <td style="color:var(--danger)">${totalKeluar}</td>
-            <td>${totalSisa}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+    let container = document.getElementById('laporan-container');
+    if (!container) return;
 
-    <!-- PRINT VIEW -->
-    <div id="printable-report">
-      <div class="print-header">
-        <h1>Laporan Mutasi Stok</h1>
-        <div class="print-meta">
-          <div>
-            <p>📅 Periode: ${periodeText}</p>
+    container.innerHTML = `
+      <div class="table-wrapper no-print">
+        <div style="background:#0A1B33; color:white; padding:15px 20px; font-weight:600; text-align:center;">📋 Detail Rincian Stok</div>
+        <table>
+          <thead style="background:#F8FAFC;">
+            <tr>
+              <th>No</th>
+              <th>SKU</th>
+              <th>NAMA BARANG</th>
+              <th>STOK AWAL</th>
+              <th>MASUK</th>
+              <th>KELUAR</th>
+              <th>SISA STOK</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+          <tfoot style="background:#FFF8E1; font-weight:700;">
+            <tr>
+              <td colspan="4" style="text-align:right; font-size:12px; letter-spacing:0.5px;">TOTAL MOVEMENT SUMMARY</td>
+              <td style="color:var(--success)">${totalMasuk}</td>
+              <td style="color:var(--danger)">${totalKeluar}</td>
+              <td>${totalSisa}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- PRINT VIEW -->
+      <div id="printable-report">
+        <div class="print-header">
+          <h1>Laporan Mutasi Stok</h1>
+          <div class="print-meta">
+            <div>
+              <p>📅 Periode: ${periodeText}</p>
+            </div>
+            <div style="text-align:right">
+              <p>Generated on: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+              <p>User: Warehouse Manager</p>
+              <p>Ref ID: RPT-STK-202401-001</p>
+            </div>
           </div>
-          <div style="text-align:right">
-            <p>Generated on: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-            <p>User: Warehouse Manager</p>
-            <p>Ref ID: RPT-STK-202401-001</p>
+        </div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th style="width:5%">No</th>
+              <th style="width:15%">SKU</th>
+              <th style="width:30%">Nama Barang</th>
+              <th style="width:10%">Stok Awal</th>
+              <th style="width:10%">Jumlah Masuk</th>
+              <th style="width:10%">Jumlah Keluar</th>
+              <th style="width:10%">Sisa Stok</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+          <tfoot style="font-weight:bold; background-color:#f1f5f9;">
+            <tr>
+              <td colspan="4" style="text-align:right; padding-right:15px; font-size:11px;">TOTAL MOVEMENT</td>
+              <td>${totalMasuk}</td>
+              <td>${totalKeluar}</td>
+              <td>${totalSisa}</td>
+            </tr>
+          </tfoot>
+        </table>
+        
+        <div class="print-signatures">
+          <div class="sig-box">
+            <p>Dibuat Oleh,</p>
+            <div class="sig-line"></div>
+            <p style="color:#0A1B33; font-weight:bold;">Warehouse Admin</p>
+            <p style="color:#666; font-size:10px;">ID: LT-ADM-04</p>
+          </div>
+          <div class="sig-box">
+            <p>Diperiksa Oleh,</p>
+            <div class="sig-line"></div>
+            <p style="color:#0A1B33; font-weight:bold;">Inventory Control</p>
+            <p style="color:#666; font-size:10px;">ID: LT-INC-02</p>
+          </div>
+          <div class="sig-box">
+            <p>Disetujui Oleh,</p>
+            <div class="sig-line"></div>
+            <p style="color:#0A1B33; font-weight:bold;">Operations Manager</p>
+            <p style="color:#666; font-size:10px;">ID: LT-MGR-01</p>
           </div>
         </div>
-      </div>
-      <table class="print-table">
-        <thead>
-          <tr>
-            <th style="width:5%">No</th>
-            <th style="width:15%">SKU</th>
-            <th style="width:30%">Nama Barang</th>
-            <th style="width:10%">Stok Awal</th>
-            <th style="width:10%">Jumlah Masuk</th>
-            <th style="width:10%">Jumlah Keluar</th>
-            <th style="width:10%">Sisa Stok</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-        <tfoot style="font-weight:bold; background-color:#f1f5f9;">
-          <tr>
-            <td colspan="4" style="text-align:right; padding-right:15px; font-size:11px;">TOTAL MOVEMENT</td>
-            <td>${totalMasuk}</td>
-            <td>${totalKeluar}</td>
-            <td>${totalSisa}</td>
-          </tr>
-        </tfoot>
-      </table>
-      
-      <div class="print-signatures">
-        <div class="sig-box">
-          <p>Dibuat Oleh,</p>
-          <div class="sig-line"></div>
-          <p style="color:#0A1B33; font-weight:bold;">Warehouse Admin</p>
-          <p style="color:#666; font-size:10px;">ID: LT-ADM-04</p>
+        
+        <div class="print-footer">
+          © 2024 LogiTrack WMS. All rights reserved. Page 1 of 1
         </div>
-        <div class="sig-box">
-          <p>Diperiksa Oleh,</p>
-          <div class="sig-line"></div>
-          <p style="color:#0A1B33; font-weight:bold;">Inventory Control</p>
-          <p style="color:#666; font-size:10px;">ID: LT-INC-02</p>
-        </div>
-        <div class="sig-box">
-          <p>Disetujui Oleh,</p>
-          <div class="sig-line"></div>
-          <p style="color:#0A1B33; font-weight:bold;">Operations Manager</p>
-          <p style="color:#666; font-size:10px;">ID: LT-MGR-01</p>
-        </div>
-      </div>
-      
-      <div class="print-footer">
-        © 2024 LogiTrack WMS. All rights reserved. Page 1 of 1
-      </div>
-    </div>`;
+      </div>`;
+  } catch (err) {
+    console.error("Error generating report:", err);
+    let container = document.getElementById('laporan-container');
+    if (container) {
+      container.innerHTML = `<div class="empty-state" style="color:var(--danger)">⚠️ Gagal memuat data laporan: ${err.message}</div>`;
+    }
+  }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  document.getElementById('login-form').addEventListener('submit', handleLogin);
+async function initApp() {
+  try {
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', handleLogin);
+    }
 
-  let savedUser = localStorage.getItem('stockflow_user');
-  if (savedUser) {
-    try {
-      currentUser = JSON.parse(savedUser);
-      await fetchAllData();
-      if (currentUser.role === 'karyawan') {
-        renderKaryawan();
-        showPage('karyawan-page');
-        await showKaryawanView('dashboard');
-      } else {
-        renderManager();
-        showPage('manager-page');
-        await showManagerView('stok');
+    // ===== Deteksi Secure Context untuk kamera HP =====
+    if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      // Coba auto-redirect ke HTTPS (server juga akan redirect, tapi ini fallback client-side)
+      var httpsUrl = 'https://' + location.hostname + ':3443' + location.pathname;
+      var banner = document.createElement('div');
+      banner.className = 'https-banner';
+      banner.innerHTML = '⚠️ Kamera tidak tersedia via HTTP. <a href="' + httpsUrl + '">Buka via HTTPS →</a>';
+      document.body.prepend(banner);
+    }
+
+    let savedUser = localStorage.getItem('stockflow_user');
+    if (savedUser) {
+      try {
+        currentUser = JSON.parse(savedUser);
+        if (!currentUser || !currentUser.username || !currentUser.role) {
+          throw new Error('Data user tersimpan tidak valid');
+        }
+        
+        // Coba fetch data — jika gagal, tetap coba render dengan data kosong
+        try {
+          await fetchAllData();
+        } catch (fetchErr) {
+          console.warn('Gagal fetch data saat init, lanjut dengan data kosong:', fetchErr);
+          // Jangan throw — biarkan dashboard render meskipun data kosong
+        }
+        
+        if (currentUser.role === 'karyawan') {
+          renderKaryawan();
+          showPage('karyawan-page');
+          try { await showKaryawanView('dashboard'); } catch(e) { console.error('Render karyawan error:', e); }
+        } else {
+          renderManager();
+          showPage('manager-page');
+          try { await showManagerView('stok'); } catch(e) { console.error('Render manager error:', e); }
+        }
+      } catch (e) {
+        console.error('Session restore gagal:', e);
+        currentUser = null;
+        localStorage.removeItem('stockflow_user');
+        showPage('login-page');
       }
-    } catch (e) {
-      localStorage.removeItem('stockflow_user');
+    } else {
       showPage('login-page');
     }
-  } else {
-    showPage('login-page');
+  } catch (fatalErr) {
+    // Fallback terakhir — pastikan SESUATU tampil, jangan blank
+    console.error('FATAL initApp error:', fatalErr);
+    try {
+      showPage('login-page');
+    } catch (e2) {
+      // Paksa manual show login
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      let lp = document.getElementById('login-page');
+      if (lp) lp.classList.add('active');
+    }
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
