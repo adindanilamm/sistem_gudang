@@ -18,6 +18,20 @@ class DashboardController {
       res.status(500).json({ error: e.message });
     }
   }
+
+  async getStockReport(req, res) {
+    try {
+      const report = await dashboardService.getStockReport({
+        page: req.query.page,
+        limit: req.query.limit,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  }
 }
 
 module.exports = new DashboardController();
