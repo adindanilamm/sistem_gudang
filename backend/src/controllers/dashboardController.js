@@ -9,6 +9,15 @@ class DashboardController {
       res.status(500).json({ error: e.message });
     }
   }
+
+  async getStockStats(req, res) {
+    try {
+      const stats = await dashboardService.getStockStats();
+      res.json(stats);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  }
 }
 
 module.exports = new DashboardController();

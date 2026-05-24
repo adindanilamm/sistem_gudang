@@ -66,6 +66,7 @@ function faIcon(name, extra = '') {
   return `<i class="fa-solid fa-${name}${extra ? ' ' + extra : ''}" aria-hidden="true"></i>`;
 }
 let localUsers = [], localTxns = [], localItems = [];
+let localItemsTotal = 0;
 
 async function parseApiResponse(res) {
   let data = null;
@@ -171,6 +172,7 @@ async function fetchAllData(options = {}) {
     localUsers = Array.isArray(usersPayload) ? usersPayload : (usersPayload.data || []);
     localItems = Array.isArray(itemsPayload) ? itemsPayload : (itemsPayload.data || []);
     localTxns = Array.isArray(txnsPayload) ? txnsPayload : (txnsPayload.data || []);
+    localItemsTotal = Array.isArray(itemsPayload) ? localItems.length : (itemsPayload.total || localItems.length);
   } catch (e) {
     console.error('Failed to fetch data:', e);
     // Jangan showModal di sini â€” biarkan caller yang memutuskan cara handle error
@@ -182,6 +184,16 @@ async function fetchAllData(options = {}) {
 function getUsers() { return localUsers || []; }
 function getTxns() { return localTxns || []; }
 function getItems() { return localItems || []; }
+function getLocalStockFallbackStats(summary = getStockSummary()) {
+  return {
+    totalSku: localItemsTotal || summary.length,
+    lowStockCount: summary.filter(i => i.stok <= 10).length,
+    emptyStockCount: summary.filter(i => i.stok <= 0).length,
+    activeUnitCount: new Set(getItems().map(i => i.satuan).filter(Boolean)).size,
+    lowStockThreshold: 10,
+    isFallback: true,
+  };
+}
 function sortTxnsNewest(txns) {
   return (txns || []).slice().sort((a, b) => {
     const idDiff = (Number(b.id) || 0) - (Number(a.id) || 0);
@@ -214,6 +226,11 @@ async function fetchStockByCode(kode) {
     if (e.message && e.message.toLowerCase().includes('tidak ditemukan')) return { stok: 0, masuk: 0, keluar: 0 };
     throw e;
   }
+}
+
+async function fetchStockStats() {
+  stockStats = await apiFetch(`${API_URL}/dashboard/stock`);
+  return stockStats;
 }
 
 function upsertLocalItem(item) {
@@ -265,6 +282,7 @@ let stokPage = 1;
 const PAGE_SIZE = 10;
 let currentKaryawanView = 'dashboard';
 let currentManagerView = 'stok';
+let stockStats = null;
 // =====================================================================
 // QR SCANNER STATE FLAGS  (FIX: cegah race-condition pada scan ke-2 dst)
 //  - isScannerStarting : mencegah double-start saat user klik 2x cepat
@@ -576,7 +594,20 @@ async function showKaryawanView(v) {
     try { await fetchAllData(); } catch(e) { console.warn('Fetch data gagal:', e); }
     renderItemForm(v, c);
   }
-  else if (v === 'stok') { try { await fetchAllData(); } catch(e) {} renderStokTable(c) }
+  else if (v === 'stok') {
+    try {
+      await fetchAllData();
+      try {
+        await fetchStockStats();
+      } catch (statsErr) {
+        stockStats = null;
+        console.warn('[Stok Stats] gagal memuat statistik database, pakai fallback metadata items:', statsErr);
+      }
+    } catch(e) {
+      console.warn('Fetch stok gagal:', e);
+    }
+    renderStokTable(c);
+  }
   else if (v === 'profile') { showProfile('karyawan-content') }
   else if (v === 'password') { showChangePassword('karyawan-content') }
   else if (v === 'tambah-sku') { renderTambahSKU(c) }
@@ -1099,10 +1130,13 @@ function printTransaction(id) {
 function renderStokTable(c) {
   stokPage = 1;
   let summary = getStockSummary();
-  let items = getItems();
-  let lowCount = summary.filter(i => i.stok <= 10).length;
-  
-  let categories = [...new Set(items.map(i => getItemDetails(i).kategori))];
+  const stats = stockStats || getLocalStockFallbackStats(summary);
+  const totalSku = stats.totalSku ?? (localItemsTotal || summary.length);
+  const lowCount = stats.lowStockCount ?? summary.filter(i => i.stok <= 10).length;
+  const emptyCount = stats.emptyStockCount ?? summary.filter(i => i.stok <= 0).length;
+  const activeUnitCount = stats.activeUnitCount ?? [...new Set(getItems().map(i => i.satuan).filter(Boolean))].length;
+  const lowThreshold = stats.lowStockThreshold ?? 10;
+  const statsNote = stats.isFallback ? '<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Ringkasan sementara dari data yang tampil. Restart backend untuk statistik penuh database.</p>' : '';
   
   let rows = summary.length ? summary.map((i, n) => {
     let details = getItemDetails(i);
@@ -1135,25 +1169,26 @@ function renderStokTable(c) {
       <div class="card stat-card">
         <div class="stat-icon-wrapper purple">${faIcon('boxes-stacked')}</div>
         <div class="stat-info">
-          <div class="stat-value">${summary.length} <span class="stat-badge purple">+12% MoM</span></div>
+          <div class="stat-value">${totalSku}</div>
           <div class="stat-label">Total SKU Terdaftar</div>
         </div>
       </div>
       <div class="card stat-card">
         <div class="stat-icon-wrapper red">${faIcon('triangle-exclamation')}</div>
         <div class="stat-info">
-          <div class="stat-value">${lowCount} <span class="stat-badge red">Urgent</span></div>
+          <div class="stat-value">${lowCount} <span class="stat-badge red"><= ${lowThreshold}</span></div>
           <div class="stat-label">SKU Stok Rendah</div>
         </div>
       </div>
       <div class="card stat-card">
         <div class="stat-icon-wrapper orange">${faIcon('tags')}</div>
         <div class="stat-info">
-          <div class="stat-value">${categories.length} <span class="stat-badge orange">Optimized</span></div>
-          <div class="stat-label">Kategori Aktif</div>
+          <div class="stat-value">${activeUnitCount} <span class="stat-badge orange">${emptyCount} habis</span></div>
+          <div class="stat-label">Satuan Aktif</div>
         </div>
       </div>
     </div>
+    ${statsNote}
     
     <div class="filter-bar">
       <div class="search-bar" style="border:1px solid var(--border); width:300px; padding:10px 16px;">
