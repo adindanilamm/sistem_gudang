@@ -1,4 +1,4 @@
-// Forward browser console logs to backend /api/log
+﻿// Forward browser console logs to backend /api/log
 (function() {
   const originalLog = console.log;
   const originalError = console.error;
@@ -52,7 +52,7 @@ window.onerror = function(message, source, lineno, colno, error) {
   errDiv.style.padding = '10px';
   errDiv.style.zIndex = '99999';
   errDiv.style.fontWeight = 'bold';
-  errDiv.innerHTML = `⚠️ JS Error: ${message} | Line: ${lineno} | File: ${source}`;
+  errDiv.innerHTML = `JS Error: ${message} | Line: ${lineno} | File: ${source}`;
   document.body.appendChild(errDiv);
   
   // Send to server
@@ -62,6 +62,9 @@ window.onerror = function(message, source, lineno, colno, error) {
 };
 
 const API_URL = window.location.origin + '/api';
+function faIcon(name, extra = '') {
+  return `<i class="fa-solid fa-${name}${extra ? ' ' + extra : ''}" aria-hidden="true"></i>`;
+}
 let localUsers = [], localTxns = [], localItems = [];
 
 async function parseApiResponse(res) {
@@ -97,8 +100,8 @@ try {
       reconnectionDelay: 1000,
       timeout: 5000
     });
-    socket.on('connect', () => console.log('🔌 Socket.IO terhubung:', socket.id));
-    socket.on('connect_error', (err) => console.warn('⚠️ Socket.IO gagal connect:', err.message));
+    socket.on('connect', () => console.log('Socket.IO terhubung:', socket.id));
+    socket.on('connect_error', (err) => console.warn('Socket.IO gagal connect:', err.message));
   }
 } catch (e) {
   console.warn('Socket.IO init error (diabaikan):', e);
@@ -126,7 +129,7 @@ if (socket) {
   });
 
   socket.on('database-updated', async () => {
-    console.log('📡 Real-time update received from another device. Syncing data...');
+    console.log('Real-time update received from another device. Syncing data...');
     // Refresh data local
     await fetchAllData();
     // Render ulang halaman yang sedang aktif agar data langsung muncul
@@ -144,10 +147,8 @@ if (socket) {
           renderTransactionHistory(currentKaryawanView.replace('history-', ''), c);
         }
       } else if (currentUser.role === 'manager') {
-        let c = document.getElementById('manager-content');
         if (currentManagerView === 'stok') {
-          renderManagerStok(c);
-          generateLaporan();
+          loadManagerItems(managerItemsPage);
         }
       }
     }
@@ -162,12 +163,15 @@ async function fetchAllData(options = {}) {
       fetch(`${API_URL}/items?limit=${limit}`),
       fetch(`${API_URL}/transactions?limit=${limit}`)
     ]);
-    localUsers = await parseApiResponse(resU);
-    localItems = await parseApiResponse(resI);
-    localTxns = await parseApiResponse(resT);
+    const usersPayload = await parseApiResponse(resU);
+    const itemsPayload = await parseApiResponse(resI);
+    const txnsPayload = await parseApiResponse(resT);
+    localUsers = Array.isArray(usersPayload) ? usersPayload : (usersPayload.data || []);
+    localItems = Array.isArray(itemsPayload) ? itemsPayload : (itemsPayload.data || []);
+    localTxns = Array.isArray(txnsPayload) ? txnsPayload : (txnsPayload.data || []);
   } catch (e) {
     console.error('Failed to fetch data:', e);
-    // Jangan showModal di sini — biarkan caller yang memutuskan cara handle error
+    // Jangan showModal di sini â€” biarkan caller yang memutuskan cara handle error
     // Ini mencegah cascading modal popup yang memblokir UI
     throw e;
   }
@@ -228,6 +232,10 @@ let isScannerStopping = false;
 let scanCooldown = false;
 
 function showPage(id) {
+  if (id !== 'manager-page') {
+    let panel = document.getElementById('manager-items-panel');
+    if (panel) panel.remove();
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   let p = document.getElementById(id);
   if (p) p.classList.add('active');
@@ -248,7 +256,7 @@ function closeSidebar() {
 function showModal(icon, cls, title, msg, actions) {
   let o = document.getElementById('modal-overlay');
   o.querySelector('.modal-icon').className = 'modal-icon ' + cls;
-  o.querySelector('.modal-icon').textContent = icon;
+  o.querySelector('.modal-icon').innerHTML = cls === 'warning' ? faIcon('triangle-exclamation') : faIcon('check');
   o.querySelector('h3').textContent = title;
   o.querySelector('p').textContent = msg;
   let a = o.querySelector('.modal-actions'); a.innerHTML = '';
@@ -282,7 +290,7 @@ document.addEventListener('click', e => {
 
 function handleForgot(e) {
   e.preventDefault();
-  showModal('🔐', 'warning', 'Lupa Password?', 'Silakan hubungi Administrator (Manager) untuk mereset password Anda.', [{ l: 'Mengerti' }]);
+  showModal('ðŸ”', 'warning', 'Lupa Password?', 'Silakan hubungi Administrator (Manager) untuk mereset password Anda.', [{ l: 'Mengerti' }]);
 }
 
 function togglePasswordVisibility() {
@@ -291,10 +299,10 @@ function togglePasswordVisibility() {
   if (!p || !i) return;
   if (p.type === 'password') {
     p.type = 'text';
-    i.textContent = '🚫';
+    i.innerHTML = p.type === 'password' ? faIcon('eye') : faIcon('eye-slash');
   } else {
     p.type = 'password';
-    i.textContent = '👁️';
+    i.innerHTML = p.type === 'password' ? faIcon('eye') : faIcon('eye-slash');
   }
 }
 
@@ -367,7 +375,7 @@ async function handleLogin(e) {
 }
 function doLogout() {
   closeSidebar();
-  showModal('🚪', 'warning', 'Konfirmasi Logout', 'Apakah Anda yakin ingin keluar?', [
+  showModal('ðŸšª', 'warning', 'Konfirmasi Logout', 'Apakah Anda yakin ingin keluar?', [
     { l: 'Batal', c: 'btn-outline' },
     {
       l: 'Ya, Keluar', c: 'btn-danger', fn: async () => {
@@ -375,7 +383,7 @@ function doLogout() {
           await fetch(`${API_URL}/logout`, { method: 'POST' }).catch(() => {});
         } catch (e) { /* abaikan error network */ }
         
-        // Reset semua state — WAJIB terjadi apapun kondisinya
+        // Reset semua state â€” WAJIB terjadi apapun kondisinya
         currentUser = null;
         localUsers = []; localTxns = []; localItems = [];
         localStorage.removeItem('stockflow_user');
@@ -392,7 +400,7 @@ function doLogout() {
           let err = document.getElementById('login-error');
           if (err) err.classList.remove('show');
         } catch (e) {
-          // Fallback absolut — paksa tampilkan login page
+          // Fallback absolut â€” paksa tampilkan login page
           document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
           let lp = document.getElementById('login-page');
           if (lp) lp.classList.add('active');
@@ -415,7 +423,7 @@ async function stopQR() {
   if (isScannerStopping) return;          // sudah dalam proses stop
   isScannerStopping = true;
   try {
-    // Cek state dulu — hanya stop jika scanner sedang aktif
+    // Cek state dulu â€” hanya stop jika scanner sedang aktif
     if (typeof qrScanner.getState === 'function') {
       // State 2 = SCANNING di html5-qrcode
       if (qrScanner.getState() === 2) {
@@ -444,11 +452,11 @@ function renderKaryawan() {
   
   let nav = document.getElementById('karyawan-nav');
   nav.innerHTML = `
-    <li><button class="nav-item" id="nav-dashboard" onclick="showKaryawanView('dashboard')"><span class="nav-icon">📊</span> Data Barang</button></li>
-    <li><button class="nav-item" id="nav-masuk" onclick="showKaryawanView('masuk')"><span class="nav-icon">📥</span> Barang Masuk</button></li>
-    <li><button class="nav-item" id="nav-keluar" onclick="showKaryawanView('keluar')"><span class="nav-icon">📤</span> Barang Keluar</button></li>
-    <li><button class="nav-item" id="nav-stok" onclick="showKaryawanView('stok')"><span class="nav-icon">📋</span> Cek Stok</button></li>
-    <li class="mobile-only-nav"><button class="nav-item" id="nav-scan" onclick="showKaryawanView('scan')"><span class="nav-icon">📷</span> Scan Barcode</button></li>
+    <li><button class="nav-item" id="nav-dashboard" onclick="showKaryawanView('dashboard')"><span class="nav-icon">${faIcon('chart-simple')}</span> Data Barang</button></li>
+    <li><button class="nav-item" id="nav-masuk" onclick="showKaryawanView('masuk')"><span class="nav-icon">${faIcon('download')}</span> Barang Masuk</button></li>
+    <li><button class="nav-item" id="nav-keluar" onclick="showKaryawanView('keluar')"><span class="nav-icon">${faIcon('upload')}</span> Barang Keluar</button></li>
+    <li><button class="nav-item" id="nav-stok" onclick="showKaryawanView('stok')"><span class="nav-icon">${faIcon('clipboard-list')}</span> Cek Stok</button></li>
+    <li class="mobile-only-nav"><button class="nav-item" id="nav-scan" onclick="showKaryawanView('scan')"><span class="nav-icon">${faIcon('camera')}</span> Scan Barcode</button></li>
   `;
 }
 
@@ -576,7 +584,7 @@ function renderKaryawanDashboard(c) {
     
     <div class="dashboard-bottom-row">
       <div class="table-wrapper">
-        <div class="warning-header">⚠️ ${tableTitle}</div>
+        <div class="warning-header">${faIcon('triangle-exclamation')} ${tableTitle}</div>
         <table class="warning-table">
           <thead class="table-header-dark"><tr><th>NAMA BARANG</th><th>SKU</th><th>STOK SAAT INI</th><th>MINIMUM STOK</th><th>LOKASI RAK</th></tr></thead>
           <tbody>
@@ -655,7 +663,7 @@ function renderItemForm(type, c) {
         <div style="display:flex; justify-content:space-between; margin-top:20px;">
           <button type="button" class="btn btn-outline" onclick="showKaryawanView('${type}')">Reset</button>
           <button type="submit" class="btn btn-primary" style="width:100%; max-width:400px;">
-            <span class="nav-icon">📦</span> Konfirmasi ${type === 'masuk' ? 'Barang Masuk' : 'Keluar'}
+            <span class="nav-icon">${faIcon('box')}</span> Konfirmasi ${type === 'masuk' ? 'Barang Masuk' : 'Keluar'}
           </button>
         </div>
       </form>
@@ -672,7 +680,7 @@ function renderItemForm(type, c) {
 // =====================================================================
 async function toggleQR(type) {
   if (isScannerStarting || isScannerStopping) {
-    console.log('⏳ Scanner sedang transisi, abaikan klik.');
+    console.log('â³ Scanner sedang transisi, abaikan klik.');
     return;
   }
   let wrap = document.getElementById('qr-reader-wrap-' + type);
@@ -689,16 +697,16 @@ async function toggleQR(type) {
 //   Perubahan:
 //   1. Async + await stopQR() dulu untuk memastikan instance lama benar-
 //      benar dilepas sebelum buat instance baru.
-//   2. Tambah qrbox (region of interest) — scanner fokus area tengah,
+//   2. Tambah qrbox (region of interest) â€” scanner fokus area tengah,
 //      jauh lebih cepat & akurat (faktor 3-5x).
 //   3. Tambah aspectRatio agar video tidak terdistorsi di HP.
 //   4. Tambah experimentalFeatures: { useBarCodeDetectorIfSupported:true }
-//      → pakai BarcodeDetector API native browser (jauh lebih cepat di
+//      â†’ pakai BarcodeDetector API native browser (jauh lebih cepat di
 //      Chrome Android).
-//   5. Perluas formatsToSupport — termasuk EAN_8, UPC_A, UPC_E, ITF,
+//   5. Perluas formatsToSupport â€” termasuk EAN_8, UPC_A, UPC_E, ITF,
 //      CODE_39, CODABAR, DATA_MATRIX. Mencegah miss-scan untuk barcode
 //      retail umum.
-//   6. Cooldown 1 detik di callback sukses → mencegah callback ter-fire
+//   6. Cooldown 1 detik di callback sukses â†’ mencegah callback ter-fire
 //      berkali-kali untuk frame yang sama (penyebab error di scan kedua).
 //   7. Penanganan flag isScannerStarting yang rapi dengan try/finally.
 // =====================================================================
@@ -710,7 +718,7 @@ async function startQR(type) {
   wrap.style.display = 'block';
 
   if (typeof Html5Qrcode === 'undefined') {
-    showModal('⚠️', 'warning', 'Kamera Error', 'Library tidak tersedia. Gunakan input manual.', [{ l: 'OK' }]);
+    showModal('âš ï¸', 'warning', 'Kamera Error', 'Library tidak tersedia. Gunakan input manual.', [{ l: 'OK' }]);
     wrap.style.display = 'none';
     isScannerStarting = false;
     return;
@@ -725,7 +733,7 @@ async function startQR(type) {
   try {
     qrScanner = new Html5Qrcode('qr-reader-' + type, { verbose: false });
 
-    // Format yang didukung — diperluas untuk menangani barcode retail
+    // Format yang didukung â€” diperluas untuk menangani barcode retail
     let supportedFormats = [];
     if (typeof Html5QrcodeSupportedFormats !== 'undefined') {
       supportedFormats = [
@@ -742,7 +750,7 @@ async function startQR(type) {
       ];
     }
 
-    // qrbox dinamis — region scan = 70% lebar viewport dengan max 300px
+    // qrbox dinamis â€” region scan = 70% lebar viewport dengan max 300px
     const qrboxFunc = (vw, vh) => {
       let minDim = Math.min(vw, vh);
       let size = Math.floor(minDim * 0.7);
@@ -760,14 +768,14 @@ async function startQR(type) {
       }
     };
 
-    console.log('🔄 Memulai kamera untuk tipe:', type);
+    console.log('ðŸ”„ Memulai kamera untuk tipe:', type);
 
     await qrScanner.start(
       { facingMode: 'environment' },
       config,
       (decodedText, decodedResult) => {
         // ====== SUCCESS CALLBACK ======
-        // Cooldown — abaikan jika baru saja scan dalam 1 detik terakhir
+        // Cooldown â€” abaikan jika baru saja scan dalam 1 detik terakhir
         if (scanCooldown) return;
         scanCooldown = true;
         setTimeout(() => { scanCooldown = false; }, 1000);
@@ -777,7 +785,7 @@ async function startQR(type) {
           .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
           .trim()
           .toUpperCase();
-        console.log('✅ Barcode terbaca:', JSON.stringify(decodedText), '| bersih:', cleanCode);
+        console.log('âœ… Barcode terbaca:', JSON.stringify(decodedText), '| bersih:', cleanCode);
 
         let manualInput = document.getElementById('manual-code-' + type);
         if (manualInput) manualInput.value = cleanCode;
@@ -788,7 +796,7 @@ async function startQR(type) {
           if (navigator.vibrate) navigator.vibrate(200);
         }
 
-        // Sembunyikan UI scanner — jangan sentuh state scanner di sini
+        // Sembunyikan UI scanner â€” jangan sentuh state scanner di sini
         wrap.style.display = 'none';
 
         // Stop scanner dengan benar (async) lalu trigger lookupItem
@@ -798,24 +806,24 @@ async function startQR(type) {
         });
       },
       (errorMessage) => {
-        // Callback frame error — di-suppress agar console tidak penuh
+        // Callback frame error â€” di-suppress agar console tidak penuh
         // (akan dipanggil ~15x per detik saat tidak ada barcode di frame)
       }
     );
   } catch (e) {
-    console.error('❌ Camera start error:', e);
+    console.error('âŒ Camera start error:', e);
     let errorStr = e.message || String(e) || 'Unknown error';
     let msg = 'Tidak dapat mengakses kamera. ' + errorStr;
     if (!window.isSecureContext) {
       msg = 'Kamera memerlukan koneksi HTTPS. Gunakan HTTPS atau localhost untuk menggunakan kamera scanner.';
     } else if (String(e).toLowerCase().includes('notallowed') || String(e).toLowerCase().includes('permission')) {
-      msg = 'Izin kamera ditolak. Buka Pengaturan browser → izinkan akses Kamera untuk situs ini.';
+      msg = 'Izin kamera ditolak. Buka Pengaturan browser â†’ izinkan akses Kamera untuk situs ini.';
     } else if (String(e).toLowerCase().includes('notfound') || String(e).toLowerCase().includes('not found')) {
       msg = 'Kamera tidak ditemukan pada perangkat ini.';
     } else if (String(e).toLowerCase().includes('notreadable') || String(e).toLowerCase().includes('not readable')) {
       msg = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain yang menggunakan kamera.';
     }
-    showModal('⚠️', 'warning', 'Kamera Error', msg, [{ l: 'OK' }]);
+    showModal('âš ï¸', 'warning', 'Kamera Error', msg, [{ l: 'OK' }]);
     wrap.style.display = 'none';
     qrScanner = null;
   } finally {
@@ -846,7 +854,7 @@ async function lookupItem(type) {
   let stock = getStockSummary().find(s => s.kode === code);
   let details = getItemDetails(item);
   preview.innerHTML = `<div style="background:#FFF8E1; border:1px solid #FFE082; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:15px;">
-    <div style="font-size:24px;">📦</div>
+    <div style="font-size:24px;">${faIcon('box')}</div>
     <div>
       <h4 style="margin:0 0 4px 0; color:#0A1B33;">${item.nama}</h4>
       <p style="margin:0; font-size:12px; color:#64748B;">Kode: <strong>${item.kode}</strong> | Stok Saat Ini: <strong style="color:var(--success)">${stock ? stock.stok : 0} ${item.satuan}</strong></p>
@@ -865,7 +873,7 @@ async function lookupItem(type) {
 async function registerItem(type, code) {
   let nama = document.getElementById('reg-nama-' + type).value.trim();
   let satuan = document.getElementById('reg-satuan-' + type).value.trim();
-  if (!nama || !satuan) { showModal('⚠️', 'warning', 'Lengkapi Data', 'Nama dan satuan harus diisi.', [{ l: 'OK' }]); return }
+  if (!nama || !satuan) { showModal('âš ï¸', 'warning', 'Lengkapi Data', 'Nama dan satuan harus diisi.', [{ l: 'OK' }]); return }
 
   try {
     await apiFetch(`${API_URL}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode: code, nama, satuan }) });
@@ -873,7 +881,7 @@ async function registerItem(type, code) {
     if (socket) socket.emit('database-updated', { type: 'item', kode: code });
     lookupItem(type);
   } catch (e) {
-    showModal('⚠️', 'warning', 'Gagal Daftar Barang', e.message, [{ l: 'OK' }]);
+    showModal('âš ï¸', 'warning', 'Gagal Daftar Barang', e.message, [{ l: 'OK' }]);
   }
 }
 
@@ -881,8 +889,8 @@ async function submitBarang(e, type) {
   e.preventDefault();
   let kode = document.getElementById('form-' + type).dataset.kode;
   let jumlah = parseInt(document.getElementById('input-jumlah-' + type).value);
-  if (!kode || !jumlah || jumlah <= 0) { showModal('⚠️', 'warning', 'Input Tidak Valid', 'Jumlah harus lebih dari 0.', [{ l: 'OK' }]); return; }
-  if (type === 'keluar') { let s = getStockSummary().find(i => i.kode === kode); if (s && jumlah > s.stok) { showModal('⚠️', 'warning', 'Stok Tidak Cukup', `Stok saat ini: ${s.stok}`, [{ l: 'OK' }]); return } }
+  if (!kode || !jumlah || jumlah <= 0) { showModal('âš ï¸', 'warning', 'Input Tidak Valid', 'Jumlah harus lebih dari 0.', [{ l: 'OK' }]); return; }
+  if (type === 'keluar') { let s = getStockSummary().find(i => i.kode === kode); if (s && jumlah > s.stok) { showModal('âš ï¸', 'warning', 'Stok Tidak Cukup', `Stok saat ini: ${s.stok}`, [{ l: 'OK' }]); return } }
 
   let date = new Date().toISOString();
   try {
@@ -891,9 +899,9 @@ async function submitBarang(e, type) {
     if (socket) socket.emit('database-updated', { type: 'transaction', type_tx: type, kode, jumlah });
 
     let nama = getItemByCode(kode).nama;
-    showModal('✓', 'success', 'Berhasil', `${nama} — Jumlah: ${jumlah} berhasil dicatat.`, [{ l: 'OK', fn: () => renderItemForm(type, document.getElementById('karyawan-content')) }]);
+    showModal('âœ“', 'success', 'Berhasil', `${nama} â€” Jumlah: ${jumlah} berhasil dicatat.`, [{ l: 'OK', fn: () => renderItemForm(type, document.getElementById('karyawan-content')) }]);
   } catch (e) {
-    showModal('⚠️', 'warning', 'Gagal Simpan Transaksi', e.message, [{ l: 'OK' }]);
+    showModal('âš ï¸', 'warning', 'Gagal Simpan Transaksi', e.message, [{ l: 'OK' }]);
   }
 }
 
@@ -921,7 +929,7 @@ function renderRecent(type) {
       <td><strong style="color:var(--text-dark)">${t.jumlah} ${it ? it.satuan : ''}</strong></td>
       <td>${details.rak}</td>
       <td><span class="badge badge-success">BERHASIL</span></td>
-      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">Print</button></td>
+      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">${faIcon('print')}</button></td>
     </tr>`;
   }).join('');
 
@@ -955,7 +963,7 @@ function renderTransactionHistory(type, c) {
       <td><strong>${t.jumlah} ${it ? it.satuan : ''}</strong></td>
       <td>${details.rak}</td>
       <td>${t.user || '-'}</td>
-      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">Print</button></td>
+      <td><button class="icon-btn" title="Cetak bukti transaksi" onclick="printTransaction(${t.id})">${faIcon('print')}</button></td>
     </tr>`;
   }).join('');
 
@@ -1039,7 +1047,7 @@ function renderStokTable(c) {
       <td><strong style="color:${colorClass}">${i.stok} ${i.satuan}</strong></td>
       <td>${details.rak}</td>
       <td>${statusBadge}</td>
-      <td><div class="action-btns"><button class="icon-btn" onclick="viewItemDetail('${i.kode}')">👁️</button></div></td>
+      <td><div class="action-btns"><button class="icon-btn" title="Lihat detail" onclick="viewItemDetail('${i.kode}')">${faIcon('eye')}</button></div></td>
     </tr>`;
   }).join('') : '<tr><td colspan="6" style="text-align:center;padding:30px;">Belum ada data</td></tr>';
 
@@ -1050,28 +1058,28 @@ function renderStokTable(c) {
         <p>Pantau ketersediaan inventaris secara real-time dari seluruh zona gudang.</p>
       </div>
       <div class="header-actions">
-        <button class="btn btn-outline" onclick="exportStokData()"><span class="nav-icon">📥</span> Export Data</button>
-        <button class="btn btn-primary" onclick="showKaryawanView('tambah-sku')"><span class="nav-icon">➕</span> Tambah SKU</button>
+        <button class="btn btn-outline" onclick="exportStokData()"><span class="nav-icon">${faIcon('file-export')}</span> Export Data</button>
+        <button class="btn btn-primary" onclick="showKaryawanView('tambah-sku')"><span class="nav-icon">${faIcon('plus')}</span> Tambah SKU</button>
       </div>
     </div>
     
     <div class="stats-grid">
       <div class="card stat-card">
-        <div class="stat-icon-wrapper purple">📦</div>
+        <div class="stat-icon-wrapper purple">${faIcon('boxes-stacked')}</div>
         <div class="stat-info">
           <div class="stat-value">${summary.length} <span class="stat-badge purple">+12% MoM</span></div>
           <div class="stat-label">Total SKU Terdaftar</div>
         </div>
       </div>
       <div class="card stat-card">
-        <div class="stat-icon-wrapper red">⚠️</div>
+        <div class="stat-icon-wrapper red">${faIcon('triangle-exclamation')}</div>
         <div class="stat-info">
           <div class="stat-value">${lowCount} <span class="stat-badge red">Urgent</span></div>
           <div class="stat-label">SKU Stok Rendah</div>
         </div>
       </div>
       <div class="card stat-card">
-        <div class="stat-icon-wrapper orange">📑</div>
+        <div class="stat-icon-wrapper orange">${faIcon('tags')}</div>
         <div class="stat-info">
           <div class="stat-value">${categories.length} <span class="stat-badge orange">Optimized</span></div>
           <div class="stat-label">Kategori Aktif</div>
@@ -1081,7 +1089,7 @@ function renderStokTable(c) {
     
     <div class="filter-bar">
       <div class="search-bar" style="border:1px solid var(--border); width:300px; padding:10px 16px;">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">${faIcon('magnifying-glass')}</span>
         <input type="text" id="search-stok" placeholder="Search product name..." onkeyup="filterStokTable()">
       </div>
       <div class="form-group" style="margin:0; width:200px;">
@@ -1149,7 +1157,7 @@ function renderStokPage(page = stokPage) {
 
   let pagination = document.getElementById('stok-pagination');
   if (!pagination) return;
-  let buttons = [`<button class="page-btn" ${stokPage === 1 ? 'disabled' : ''} onclick="renderStokPage(${stokPage - 1})">‹</button>`];
+  let buttons = [`<button class="page-btn" ${stokPage === 1 ? 'disabled' : ''} onclick="renderStokPage(${stokPage - 1})">â€¹</button>`];
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || Math.abs(i - stokPage) <= 1) {
       buttons.push(`<button class="page-btn ${i === stokPage ? 'active' : ''}" onclick="renderStokPage(${i})">${i}</button>`);
@@ -1157,15 +1165,15 @@ function renderStokPage(page = stokPage) {
       buttons.push('<span class="page-ellipsis">...</span>');
     }
   }
-  buttons.push(`<button class="page-btn" ${stokPage === totalPages ? 'disabled' : ''} onclick="renderStokPage(${stokPage + 1})">›</button>`);
+  buttons.push(`<button class="page-btn" ${stokPage === totalPages ? 'disabled' : ''} onclick="renderStokPage(${stokPage + 1})">â€º</button>`);
   pagination.innerHTML = buttons.join('');
 }
 
 function renderRemoteScanner(c) {
   c.innerHTML = `<div class="section-panel" style="text-align:center; min-height:80vh; display:flex; flex-direction:column; justify-content:center; align-items:center;">
     <div class="section-header" style="width:100%; justify-content:space-between; margin-bottom: 20px;">
-      <h2>📷 Scan Barang</h2>
-      <button class="btn btn-outline btn-sm" onclick="showKaryawanView('dashboard')">← Kembali</button>
+      <h2>${faIcon('camera')} Scan Barang</h2>
+      <button class="btn btn-outline btn-sm" onclick="showKaryawanView('dashboard')">${faIcon('arrow-left')} Kembali</button>
     </div>
     <p style="color:var(--text-secondary); margin-bottom:20px;">Arahkan kamera ke barcode untuk scan barang.</p>
     
@@ -1231,7 +1239,7 @@ async function startRemoteScanner() {
         
         let statusEl = document.getElementById('remote-status');
         if(statusEl) {
-          statusEl.innerHTML = `✅ Terkirim: <strong>${cleanCode}</strong>`;
+          statusEl.innerHTML = `${faIcon('check')} Terkirim: <strong>${cleanCode}</strong>`;
           statusEl.style.color = 'var(--success)';
           setTimeout(() => { 
             if(document.getElementById('remote-status')) {
@@ -1263,7 +1271,7 @@ async function startRemoteScanner() {
     }
     let statusEl = document.getElementById('remote-status');
     if(statusEl) {
-      statusEl.innerHTML = '❌ ' + msg;
+      statusEl.innerHTML = faIcon('xmark') + ' ' + msg;
       statusEl.style.color = 'var(--danger)';
     }
   } finally {
@@ -1291,10 +1299,10 @@ function showProfile(containerId) {
         <span class="badge ${isKaryawan ? 'badge-success' : 'badge-warning'}" style="margin-bottom:15px;">${currentUser.role}</span>
         <hr style="border:none;border-top:1px solid var(--border);margin:15px 0;">
         <div style="text-align:left; font-size:12px; color:var(--text-muted);">
-          <p style="margin-bottom:8px;">📧 ${currentUser.email || 'Belum diatur'}</p>
-          <p style="margin-bottom:8px;">📱 ${currentUser.phone || 'Belum diatur'}</p>
+          <p style="margin-bottom:8px;">${faIcon('envelope')} ${currentUser.email || 'Belum diatur'}</p>
+          <p style="margin-bottom:8px;">${faIcon('phone')} ${currentUser.phone || 'Belum diatur'}</p>
         </div>
-        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('password')">🔒 Ubah Password</button>
+        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('password')">${faIcon('lock')} Ubah Password</button>
       </div>
       
       <div class="card" style="padding:30px;">
@@ -1309,8 +1317,8 @@ function showProfile(containerId) {
             <div class="form-group"><label>Email</label><input id="pf-email" class="form-control" type="email" value="${currentUser.email || ''}" placeholder="nama@email.com"></div>
           </div>
           <div style="display:flex;gap:10px;margin-top:10px;">
-            <button type="button" class="btn btn-outline" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('${isKaryawan ? 'dashboard' : 'stok'}')">← Kembali</button>
-            <button type="submit" class="btn btn-primary">💾 Simpan Perubahan</button>
+            <button type="button" class="btn btn-outline" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('${isKaryawan ? 'dashboard' : 'stok'}')">${faIcon('arrow-left')} Kembali</button>
+            <button type="submit" class="btn btn-primary">${faIcon('floppy-disk')} Simpan Perubahan</button>
           </div>
         </form>
       </div>
@@ -1333,9 +1341,9 @@ async function saveProfile(e) {
     localStorage.setItem('stockflow_user', JSON.stringify(currentUser));
     document.querySelectorAll('.profile-info .name').forEach(el => el.textContent = currentUser.name);
     document.querySelectorAll('.profile-info .avatar').forEach(el => el.textContent = currentUser.name.charAt(0));
-    showModal('?', 'success', 'Berhasil', 'Profil berhasil diperbarui.', [{ l: 'OK' }]);
+    showModal('success', 'success', 'Berhasil', 'Profil berhasil diperbarui.', [{ l: 'OK' }]);
   } catch (e) {
-    showModal('⚠️', 'warning', 'Gagal Simpan Profil', e.message, [{ l: 'OK' }]);
+    showModal('warning', 'warning', 'Gagal Simpan Profil', e.message, [{ l: 'OK' }]);
   }
 }
 
@@ -1344,7 +1352,7 @@ function showChangePassword(containerId) {
   let isKaryawan = containerId.includes('karyawan');
   c.innerHTML = `
     <div class="content-header">
-      <h2>🔒 Ubah Password</h2>
+      <h2>${faIcon('lock')} Ubah Password</h2>
       <p>Masukkan password lama dan password baru Anda.</p>
     </div>
     <div class="card" style="max-width:500px; padding:30px;">
@@ -1353,8 +1361,8 @@ function showChangePassword(containerId) {
         <div class="form-group"><label>Password Baru</label><input type="password" id="pw-new" class="form-control" required></div>
         <div class="form-group"><label>Konfirmasi Password Baru</label><input type="password" id="pw-conf" class="form-control" required></div>
         <div style="display:flex;gap:10px;margin-top:15px;">
-          <button type="button" class="btn btn-outline" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('profile')">← Kembali</button>
-          <button type="submit" class="btn btn-primary">💾 Simpan Password Baru</button>
+          <button type="button" class="btn btn-outline" onclick="${isKaryawan ? 'showKaryawanView' : 'showManagerView'}('profile')">${faIcon('arrow-left')} Kembali</button>
+          <button type="submit" class="btn btn-primary">${faIcon('floppy-disk')} Simpan Password Baru</button>
         </div>
       </form>
     </div>`;
@@ -1365,9 +1373,9 @@ async function savePassword(e) {
   let old = document.getElementById('pw-old').value;
   let nw = document.getElementById('pw-new').value;
   let cf = document.getElementById('pw-conf').value;
-  if (old !== currentUser.password) { showModal('⚠️', 'warning', 'Gagal', 'Password lama salah.', [{ l: 'OK' }]); return; }
-  if (nw !== cf) { showModal('⚠️', 'warning', 'Gagal', 'Konfirmasi password tidak cocok.', [{ l: 'OK' }]); return; }
-  if (nw.length < 4) { showModal('⚠️', 'warning', 'Gagal', 'Password minimal 4 karakter.', [{ l: 'OK' }]); return; }
+  if (old !== currentUser.password) { showModal('warning', 'warning', 'Gagal', 'Password lama salah.', [{ l: 'OK' }]); return; }
+  if (nw !== cf) { showModal('warning', 'warning', 'Gagal', 'Konfirmasi password tidak cocok.', [{ l: 'OK' }]); return; }
+  if (nw.length < 4) { showModal('warning', 'warning', 'Gagal', 'Password minimal 4 karakter.', [{ l: 'OK' }]); return; }
   try {
     let updated = await apiFetch(`${API_URL}/users/${currentUser.username}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1375,9 +1383,9 @@ async function savePassword(e) {
     });
     currentUser = updated;
     localStorage.setItem('stockflow_user', JSON.stringify(currentUser));
-    showModal('?', 'success', 'Berhasil', 'Password berhasil diubah.', [{ l: 'OK' }]);
+    showModal('success', 'success', 'Berhasil', 'Password berhasil diubah.', [{ l: 'OK' }]);
   } catch (e) {
-    showModal('⚠️', 'warning', 'Gagal Ubah Password', e.message, [{ l: 'OK' }]);
+    showModal('warning', 'warning', 'Gagal Ubah Password', e.message, [{ l: 'OK' }]);
   }
 }
 
@@ -1385,7 +1393,7 @@ async function savePassword(e) {
 function renderTambahSKU(c) {
   c.innerHTML = `
     <div class="content-header">
-      <h2>➕ Tambah SKU Baru</h2>
+      <h2>${faIcon('plus')} Tambah SKU Baru</h2>
       <p>Daftarkan barang baru ke dalam sistem inventaris.</p>
     </div>
     <div class="card" style="max-width:600px; padding:30px;">
@@ -1396,8 +1404,8 @@ function renderTambahSKU(c) {
           <div class="form-group"><label>Satuan</label><input type="text" id="sku-satuan" class="form-control" placeholder="Pcs / Box / Unit" required></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:15px;">
-          <button type="button" class="btn btn-outline" onclick="showKaryawanView('stok')">← Kembali</button>
-          <button type="submit" class="btn btn-primary">📦 Daftarkan Barang</button>
+          <button type="button" class="btn btn-outline" onclick="showKaryawanView('stok')">${faIcon('arrow-left')} Kembali</button>
+          <button type="submit" class="btn btn-primary">${faIcon('box')} Daftarkan Barang</button>
         </div>
       </form>
     </div>`;
@@ -1408,25 +1416,25 @@ async function submitTambahSKU(e) {
   let kode = document.getElementById('sku-kode').value.trim().toUpperCase();
   let nama = document.getElementById('sku-nama').value.trim();
   let satuan = document.getElementById('sku-satuan').value.trim();
-  if (!kode || !nama || !satuan) { showModal('⚠️', 'warning', 'Lengkapi Data', 'Kode, nama, dan satuan harus diisi.', [{ l: 'OK' }]); return; }
+  if (!kode || !nama || !satuan) { showModal('âš ï¸', 'warning', 'Lengkapi Data', 'Kode, nama, dan satuan harus diisi.', [{ l: 'OK' }]); return; }
   
   let existing = getItemByCode(kode);
-  if (existing) { showModal('⚠️', 'warning', 'Duplikat', 'Kode SKU ini sudah terdaftar.', [{ l: 'OK' }]); return; }
+  if (existing) { showModal('âš ï¸', 'warning', 'Duplikat', 'Kode SKU ini sudah terdaftar.', [{ l: 'OK' }]); return; }
   
   try {
     await apiFetch(`${API_URL}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode, nama, satuan }) });
     await fetchAllData();
     if (socket) socket.emit('database-updated', { type: 'item', kode });
-    showModal('✓', 'success', 'Berhasil', `Barang "${nama}" (${kode}) berhasil didaftarkan.`, [{ l: 'OK', fn: () => showKaryawanView('stok') }]);
+    showModal('âœ“', 'success', 'Berhasil', `Barang "${nama}" (${kode}) berhasil didaftarkan.`, [{ l: 'OK', fn: () => showKaryawanView('stok') }]);
   } catch (e) {
-    showModal('⚠️', 'warning', 'Gagal Tambah SKU', e.message, [{ l: 'OK' }]);
+    showModal('âš ï¸', 'warning', 'Gagal Tambah SKU', e.message, [{ l: 'OK' }]);
   }
 }
 
 // EXPORT DATA
 function exportStokData() {
   let summary = getStockSummary();
-  if (typeof XLSX === 'undefined') { showModal('⚠️', 'warning', 'Error', 'Library XLSX belum dimuat.', [{ l: 'OK' }]); return; }
+  if (typeof XLSX === 'undefined') { showModal('âš ï¸', 'warning', 'Error', 'Library XLSX belum dimuat.', [{ l: 'OK' }]); return; }
   let data = summary.map((i, n) => {
     let d = getItemDetails(i);
     return { No: n+1, SKU: i.kode, 'Nama Barang': i.nama, Kategori: d.kategori, Stok: i.stok, Satuan: i.satuan, 'Lokasi Rak': d.rak };
@@ -1435,7 +1443,7 @@ function exportStokData() {
   let wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Stok Barang');
   XLSX.writeFile(wb, 'StokBarang_' + new Date().toISOString().split('T')[0] + '.xlsx');
-  showModal('✅', 'success', 'Export Berhasil', 'File Excel telah diunduh.', [{ l: 'OK' }]);
+  showModal('âœ…', 'success', 'Export Berhasil', 'File Excel telah diunduh.', [{ l: 'OK' }]);
 }
 
 // VIEW ITEM DETAIL
@@ -1445,232 +1453,171 @@ function viewItemDetail(kode) {
   let stock = getStockSummary().find(s => s.kode === kode);
   let d = getItemDetails(item);
   let txns = getTxns().filter(t => t.kode === kode).slice(-5).reverse();
-  let txnRows = txns.map(t => `<tr><td>${fmtDateShort(t.date)}</td><td>${t.type === 'masuk' ? '📥 Masuk' : '📤 Keluar'}</td><td>${t.jumlah} ${item.satuan}</td><td>${t.user || '-'}</td></tr>`).join('');
+  let txnRows = txns.map(t => `<tr><td>${fmtDateShort(t.date)}</td><td>${t.type === 'masuk' ? 'ðŸ“¥ Masuk' : 'ðŸ“¤ Keluar'}</td><td>${t.jumlah} ${item.satuan}</td><td>${t.user || '-'}</td></tr>`).join('');
   
-  showModal('📦', 'success', item.nama, `SKU: ${item.kode} | Stok: ${stock ? stock.stok : 0} ${item.satuan} | Rak: ${d.rak} | Kategori: ${d.kategori}`, [{ l: 'Tutup' }]);
+  showModal('ðŸ“¦', 'success', item.nama, `SKU: ${item.kode} | Stok: ${stock ? stock.stok : 0} ${item.satuan} | Rak: ${d.rak} | Kategori: ${d.kategori}`, [{ l: 'Tutup' }]);
 }
 
 // MANAGER
+let managerItemsPage = 1;
+let managerItemsMeta = { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
+let managerItems = [];
+
 function renderManager() {
   if (!currentUser) return;
   let nameEl = document.querySelector('#manager-page .profile-info .name');
   let avatarEl = document.querySelector('#manager-page .profile-info .avatar');
   if (nameEl) nameEl.textContent = currentUser.name;
   if (avatarEl) avatarEl.textContent = currentUser.name.charAt(0);
-  
+
   let nav = document.getElementById('manager-nav');
   nav.innerHTML = `
-    <li><button class="nav-item active" id="nav-stok" onclick="showManagerView('stok')"><span class="nav-icon">📑</span> Laporan Stok</button></li>
+    <li><button class="nav-item active" id="nav-stok" onclick="showManagerView('stok')"><span class="nav-icon">${faIcon('chart-simple')}</span> Data Barang</button></li>
   `;
 }
 
 async function showManagerView(v) {
   currentManagerView = v;
   closeSidebar();
-  try { await stopQR(); } catch(e) {} // pastikan kamera mati
+  try { await stopQR(); } catch(e) {}
   let c = document.getElementById('manager-content');
+  if (!c) return;
   setActiveNav(v);
-  
+  if (v !== 'stok') {
+    let panel = document.getElementById('manager-items-panel');
+    if (panel) panel.remove();
+  }
+
   if (v === 'stok') {
-    c.innerHTML = '<div class="empty-state">Memuat laporan stok...</div>';
-    try {
-      await fetchAllData();
-    } catch (e) {
-      console.error('Gagal fetch data untuk laporan stok:', e);
-      // Tetap lanjut render — tabel akan kosong tapi tidak blank
-    }
-    renderManagerStok(c);
-    // Pastikan date inputs sudah ada di DOM sebelum generate
-    requestAnimationFrame(() => {
-      try {
-        generateLaporan();
-      } catch (e) {
-        console.error('Gagal generate laporan:', e);
-        let container = document.getElementById('laporan-container');
-        if (container) {
-          container.innerHTML = '<div class="empty-state" style="color:var(--danger)">⚠️ Gagal memuat data laporan. Coba klik "Tampilkan Data".</div>';
-        }
-      }
-    });
+    await loadManagerItems(managerItemsPage);
   }
   else if (v === 'profile') { showProfile('manager-content') }
   else if (v === 'password') { showChangePassword('manager-content') }
 }
 
-function renderManagerStok(c) {
-  let today = new Date().toISOString().split('T')[0];
-  let firstDay = today.substring(0, 8) + '01';
-
-  c.innerHTML = `
-    <div class="content-header no-print">
-      <h2>Laporan Stok Barang</h2>
-      <p>Pilih periode untuk menampilkan laporan stok barang.</p>
-    </div>
-    
-    <div class="filter-bar no-print">
-      <div class="form-group" style="margin:0"><label>Tanggal Awal</label><input type="date" id="periode-start" class="form-control" value="${firstDay}"></div>
-      <div class="form-group" style="margin:0"><label>Tanggal Akhir</label><input type="date" id="periode-end" class="form-control" value="${today}"></div>
-      <button class="btn btn-primary" onclick="generateLaporan()" style="padding:12px 24px;">Tampilkan Data</button>
-      <button class="btn btn-primary" onclick="window.print()" style="padding:12px 24px; background:#FFC107; color:#0A1B33; margin-left:auto;">🖨 Cetak Laporan</button>
-    </div>
-    
-    <div id="laporan-container"></div>`;
+function getManagerItemsPanel() {
+  let panel = document.getElementById('manager-items-panel');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'manager-items-panel';
+    document.body.appendChild(panel);
+  }
+  return panel;
 }
 
-function generateLaporan() {
+async function loadManagerItems(page = 1) {
+  let c = document.getElementById('manager-content');
+  if (!c) return;
+
+  managerItemsPage = Math.max(1, page);
+  const panel = getManagerItemsPanel();
+  panel.innerHTML = `
+    <div class="content-header">
+      <h2>Data Barang</h2>
+      <p>Memuat data barang dari database...</p>
+    </div>
+    <div class="empty-state">Memuat data barang...</div>
+  `;
+
   try {
-    let startDate = document.getElementById('periode-start').value;
-    let endDate = document.getElementById('periode-end').value;
-
-    if (!startDate || !endDate) return;
-
-    let start = new Date(startDate);
-    let end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-
-    if (start > end) return;
-
-    let allTxns = getTxns();
-    let items = getItems();
-
-    let summary = items.map(item => {
-      let txnsBefore = allTxns.filter(t => t.kode === item.kode && new Date(t.date) < start);
-      let stokAwal = txnsBefore.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0)
-                   - txnsBefore.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
-
-      let txnsPeriod = allTxns.filter(t => t.kode === item.kode && new Date(t.date) >= start && new Date(t.date) <= end);
-      let masuk = txnsPeriod.filter(t => t.type === 'masuk').reduce((s, t) => s + t.jumlah, 0);
-      let keluar = txnsPeriod.filter(t => t.type === 'keluar').reduce((s, t) => s + t.jumlah, 0);
-
-      let sisaStok = stokAwal + masuk - keluar;
-      return { ...item, stokAwal, masuk, keluar, sisaStok };
-    });
-    
-    let displaySummary = summary.slice(0, PAGE_SIZE);
-    let totalMasuk = displaySummary.reduce((s, i) => s + i.masuk, 0);
-    let totalKeluar = displaySummary.reduce((s, i) => s + i.keluar, 0);
-    let totalSisa = displaySummary.reduce((s, i) => s + i.sisaStok, 0);
-
-    let rows = displaySummary.length ? displaySummary.map((i, n) => `<tr>
-        <td>${n + 1}</td>
-        <td><strong>${i.kode}</strong></td>
-        <td class="text-left">${i.nama}</td>
-        <td>${i.stokAwal}</td>
-        <td style="color: var(--success); font-weight: 600;">${i.masuk}</td>
-        <td style="color: var(--danger); font-weight: 600;">${i.keluar}</td>
-        <td style="font-weight: 600;">${i.sisaStok}</td>
-      </tr>`).join('')
-      : '<tr><td colspan="7" style="text-align:center;padding:30px;">Belum ada data pada periode ini</td></tr>';
-
-    let periodeText = new Date(startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-      + ' - ' + new Date(endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-
-    let container = document.getElementById('laporan-container');
-    if (!container) return;
-
-    container.innerHTML = `
-      <div class="table-wrapper no-print">
-        <div style="background:#0A1B33; color:white; padding:15px 20px; font-weight:600; text-align:center;">📋 Detail Rincian Stok</div>
-        <table>
-          <thead style="background:#F8FAFC;">
-            <tr>
-              <th>No</th>
-              <th>SKU</th>
-              <th>NAMA BARANG</th>
-              <th>STOK AWAL</th>
-              <th>MASUK</th>
-              <th>KELUAR</th>
-              <th>SISA STOK</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-          <tfoot style="background:#FFF8E1; font-weight:700;">
-            <tr>
-              <td colspan="4" style="text-align:right; font-size:12px; letter-spacing:0.5px;">TOTAL MOVEMENT SUMMARY</td>
-              <td style="color:var(--success)">${totalMasuk}</td>
-              <td style="color:var(--danger)">${totalKeluar}</td>
-              <td>${totalSisa}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <!-- PRINT VIEW -->
-      <div id="printable-report">
-        <div class="print-header">
-          <h1>Laporan Mutasi Stok</h1>
-          <div class="print-meta">
-            <div>
-              <p>📅 Periode: ${periodeText}</p>
-            </div>
-            <div style="text-align:right">
-              <p>Generated on: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-              <p>User: Warehouse Manager</p>
-              <p>Ref ID: RPT-STK-202401-001</p>
-            </div>
-          </div>
-        </div>
-        <table class="print-table">
-          <thead>
-            <tr>
-              <th style="width:5%">No</th>
-              <th style="width:15%">SKU</th>
-              <th style="width:30%">Nama Barang</th>
-              <th style="width:10%">Stok Awal</th>
-              <th style="width:10%">Jumlah Masuk</th>
-              <th style="width:10%">Jumlah Keluar</th>
-              <th style="width:10%">Sisa Stok</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-          <tfoot style="font-weight:bold; background-color:#f1f5f9;">
-            <tr>
-              <td colspan="4" style="text-align:right; padding-right:15px; font-size:11px;">TOTAL MOVEMENT</td>
-              <td>${totalMasuk}</td>
-              <td>${totalKeluar}</td>
-              <td>${totalSisa}</td>
-            </tr>
-          </tfoot>
-        </table>
-        
-        <div class="print-signatures">
-          <div class="sig-box">
-            <p>Dibuat Oleh,</p>
-            <div class="sig-line"></div>
-            <p style="color:#0A1B33; font-weight:bold;">Warehouse Admin</p>
-            <p style="color:#666; font-size:10px;">ID: LT-ADM-04</p>
-          </div>
-          <div class="sig-box">
-            <p>Diperiksa Oleh,</p>
-            <div class="sig-line"></div>
-            <p style="color:#0A1B33; font-weight:bold;">Inventory Control</p>
-            <p style="color:#666; font-size:10px;">ID: LT-INC-02</p>
-          </div>
-          <div class="sig-box">
-            <p>Disetujui Oleh,</p>
-            <div class="sig-line"></div>
-            <p style="color:#0A1B33; font-weight:bold;">Operations Manager</p>
-            <p style="color:#666; font-size:10px;">ID: LT-MGR-01</p>
-          </div>
-        </div>
-        
-        <div class="print-footer">
-          © 2024 LogiTrack WMS. All rights reserved. Page 1 of 1
-        </div>
-      </div>`;
-  } catch (err) {
-    console.error("Error generating report:", err);
-    let container = document.getElementById('laporan-container');
-    if (container) {
-      container.innerHTML = `<div class="empty-state" style="color:var(--danger)">⚠️ Gagal memuat data laporan: ${err.message}</div>`;
-    }
+    const res = await apiFetch(`${API_URL}/items?page=${managerItemsPage}&limit=${PAGE_SIZE}`);
+    managerItems = Array.isArray(res) ? res : (res.data || []);
+    managerItemsMeta = Array.isArray(res)
+      ? { page: 1, limit: PAGE_SIZE, total: managerItems.length, totalPages: 1 }
+      : res;
+    renderManagerItemsTable(c);
+  } catch (e) {
+    console.error('[Manager] Gagal memuat items:', e);
+    getManagerItemsPanel().innerHTML = renderPageError('Data barang gagal dimuat', e.message);
   }
 }
 
+function renderManagerItemsTable(c) {
+  let panel = getManagerItemsPanel();
+  const page = managerItemsMeta.page || managerItemsPage;
+  const limit = managerItemsMeta.limit || PAGE_SIZE;
+  const total = managerItemsMeta.total || managerItems.length;
+  const totalPages = managerItemsMeta.totalPages || 1;
+  const start = total ? ((page - 1) * limit) + 1 : 0;
+  const end = total ? Math.min(page * limit, total) : 0;
+
+  const rows = managerItems.length ? managerItems.map((item, index) => `
+    <tr>
+      <td>${start + index}</td>
+      <td><strong>${item.kode || '-'}</strong></td>
+      <td>${item.nama || '-'}</td>
+      <td>${item.satuan || '-'}</td>
+      <td>${formatDateTime(item.created_at)}</td>
+      <td>${formatDateTime(item.updated_at)}</td>
+    </tr>
+  `).join('') : `
+    <tr><td colspan="6" style="text-align:center;padding:32px;color:#64748B;">Belum ada data barang.</td></tr>
+  `;
+
+  panel.innerHTML = `
+    <div class="content-header manager-items-header-inline">
+      <div>
+        <h2>Data Barang</h2>
+        <p>Data diambil bertahap dari database, ${PAGE_SIZE} data per halaman.</p>
+      </div>
+      <button class="btn btn-primary" onclick="loadManagerItems(${page})">Refresh</button>
+    </div>
+
+    <div class="manager-summary-row">
+      <div class="manager-summary-item"><span>Total Data</span><strong>${total}</strong></div>
+      <div class="manager-summary-item"><span>Halaman</span><strong>${page} / ${totalPages}</strong></div>
+      <div class="manager-summary-item"><span>Ditampilkan</span><strong>${start}-${end}</strong></div>
+    </div>
+
+    <div class="table-wrapper manager-table-card">
+      <div class="table-header-toolbar">
+        <h3>Daftar Barang</h3>
+        <span id="manager-items-page-info">Menampilkan ${start}-${end} dari ${total} data</span>
+      </div>
+      <table>
+        <thead class="table-header-dark">
+          <tr>
+            <th>No</th>
+            <th>Kode</th>
+            <th>Nama Barang</th>
+            <th>Satuan</th>
+            <th>Created At</th>
+            <th>Updated At</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <div class="pagination manager-pagination">
+      <button class="page-btn" ${page <= 1 ? 'disabled' : ''} onclick="loadManagerItems(${page - 1})">‹</button>
+      <span class="page-ellipsis">Page ${page} of ${totalPages}</span>
+      <button class="page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="loadManagerItems(${page + 1})">›</button>
+    </div>
+  `;
+}
+
+function renderPageError(title, message) {
+  return `
+    <div class="empty-state" style="border:1px solid #FCA5A5; background:#FEF2F2; color:#991B1B; text-align:left;">
+      <h3 style="margin-bottom:8px;">${title}</h3>
+      <p style="margin:0 0 10px 0;">${message || 'Terjadi kesalahan tidak diketahui.'}</p>
+      <p style="margin:0; font-size:12px; color:#7F1D1D;">Cek Console browser dan terminal backend untuk detail error.</p>
+    </div>`;
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
 async function initApp() {
   try {
     const loginForm = document.getElementById('login-form');
@@ -1684,7 +1631,7 @@ async function initApp() {
       var httpsUrl = 'https://' + location.hostname + ':3443' + location.pathname;
       var banner = document.createElement('div');
       banner.className = 'https-banner';
-      banner.innerHTML = '⚠️ Kamera tidak tersedia via HTTP. <a href="' + httpsUrl + '">Buka via HTTPS →</a>';
+      banner.innerHTML = faIcon('triangle-exclamation') + ' Kamera tidak tersedia via HTTP. <a href="' + httpsUrl + '">Buka via HTTPS</a>';
       document.body.prepend(banner);
     }
 
@@ -1696,12 +1643,12 @@ async function initApp() {
           throw new Error('Data user tersimpan tidak valid');
         }
         
-        // Coba fetch data — jika gagal, tetap coba render dengan data kosong
+        // Coba fetch data â€” jika gagal, tetap coba render dengan data kosong
         try {
           await fetchAllData();
         } catch (fetchErr) {
           console.warn('Gagal fetch data saat init, lanjut dengan data kosong:', fetchErr);
-          // Jangan throw — biarkan dashboard render meskipun data kosong
+          // Jangan throw â€” biarkan dashboard render meskipun data kosong
         }
         
         if (currentUser.role === 'karyawan') {
@@ -1723,7 +1670,7 @@ async function initApp() {
       showPage('login-page');
     }
   } catch (fatalErr) {
-    // Fallback terakhir — pastikan SESUATU tampil, jangan blank
+    // Fallback terakhir â€” pastikan SESUATU tampil, jangan blank
     console.error('FATAL initApp error:', fatalErr);
     try {
       showPage('login-page');

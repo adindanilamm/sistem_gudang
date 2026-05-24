@@ -3,10 +3,17 @@ const prisma = require('../config/database');
 class ItemService {
   async getAllItems(options = {}) {
     const limit = options.limit;
+    const page = options.page || 1;
+    const skip = limit ? (page - 1) * limit : undefined;
     return prisma.item.findMany({
       orderBy: { kode: 'asc' },
+      ...(skip !== undefined ? { skip } : {}),
       ...(limit ? { take: limit } : {}),
     });
+  }
+
+  async countItems() {
+    return prisma.item.count();
   }
 
   async createItem(data) {
