@@ -156,12 +156,14 @@ if (socket) {
 }
 
 async function fetchAllData(options = {}) {
-  const limit = options.limit || 10;
+  const itemLimit = options.itemLimit || options.limit || 10;
+  const userLimit = options.userLimit || options.limit || 10;
+  const transactionLimit = options.transactionLimit || 50;
   try {
     let [resU, resI, resT] = await Promise.all([
-      fetch(`${API_URL}/users?limit=${limit}`),
-      fetch(`${API_URL}/items?limit=${limit}`),
-      fetch(`${API_URL}/transactions?limit=${limit}`)
+      fetch(`${API_URL}/users?limit=${userLimit}`),
+      fetch(`${API_URL}/items?limit=${itemLimit}`),
+      fetch(`${API_URL}/transactions?limit=${transactionLimit}`)
     ]);
     const usersPayload = await parseApiResponse(resU);
     const itemsPayload = await parseApiResponse(resI);
@@ -180,9 +182,53 @@ async function fetchAllData(options = {}) {
 function getUsers() { return localUsers || []; }
 function getTxns() { return localTxns || []; }
 function getItems() { return localItems || []; }
+function sortTxnsNewest(txns) {
+  return (txns || []).slice().sort((a, b) => {
+    const idDiff = (Number(b.id) || 0) - (Number(a.id) || 0);
+    if (idDiff) return idDiff;
+    return new Date(b.date || 0) - new Date(a.date || 0);
+  });
+}
 function getItemByCode(k) {
   let target = String(k).trim().toUpperCase();
   return (localItems || []).find(i => String(i.kode).trim().toUpperCase() === target);
+}
+
+async function fetchItemByCode(kode) {
+  const cleanKode = String(kode || '').trim();
+  if (!cleanKode) return null;
+  try {
+    return await apiFetch(`${API_URL}/items/${encodeURIComponent(cleanKode)}`);
+  } catch (e) {
+    if (e.message && e.message.toLowerCase().includes('tidak ditemukan')) return null;
+    throw e;
+  }
+}
+
+async function fetchStockByCode(kode) {
+  const cleanKode = String(kode || '').trim();
+  if (!cleanKode) return { stok: 0, masuk: 0, keluar: 0 };
+  try {
+    return await apiFetch(`${API_URL}/transactions/stock/${encodeURIComponent(cleanKode)}`);
+  } catch (e) {
+    if (e.message && e.message.toLowerCase().includes('tidak ditemukan')) return { stok: 0, masuk: 0, keluar: 0 };
+    throw e;
+  }
+}
+
+function upsertLocalItem(item) {
+  if (!item || !item.kode) return;
+  const idx = localItems.findIndex((i) => String(i.kode).trim().toUpperCase() === String(item.kode).trim().toUpperCase());
+  if (idx >= 0) localItems[idx] = item;
+  else localItems.unshift(item);
+}
+
+function upsertLocalTransaction(txn) {
+  if (!txn || !txn.id) return;
+  const idx = localTxns.findIndex((t) => Number(t.id) === Number(txn.id));
+  if (idx >= 0) localTxns[idx] = txn;
+  else localTxns.unshift(txn);
+  localTxns = sortTxnsNewest(localTxns).slice(0, 50);
 }
 
 function getItemDetails(item) {
@@ -835,8 +881,20 @@ async function lookupItem(type) {
   let rawCode = document.getElementById('manual-code-' + type).value;
   let code = rawCode.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '').trim().toUpperCase();
   if (!code) return;
-  await fetchAllData();
-  let item = getItemByCode(code), preview = document.getElementById('item-preview-' + type), form = document.getElementById('form-' + type);
+  let preview = document.getElementById('item-preview-' + type);
+  let form = document.getElementById('form-' + type);
+  let item = getItemByCode(code);
+
+  try {
+    const freshItem = await fetchItemByCode(code);
+    if (freshItem) {
+      item = freshItem;
+      upsertLocalItem(freshItem);
+    }
+  } catch (e) {
+    showModal('warning', 'warning', 'Gagal Cek Barang', e.message, [{ l: 'OK' }]);
+    return;
+  }
 
   if (!item) {
     preview.innerHTML = `<div style="background:#FEE2E2; border:1px solid #FCA5A5; padding:15px; border-radius:8px; margin-bottom:20px;">
@@ -851,7 +909,7 @@ async function lookupItem(type) {
     return;
   }
 
-  let stock = getStockSummary().find(s => s.kode === code);
+  let stock = await fetchStockByCode(code);
   let details = getItemDetails(item);
   preview.innerHTML = `<div style="background:#FFF8E1; border:1px solid #FFE082; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:15px;">
     <div style="font-size:24px;">${faIcon('box')}</div>
@@ -862,6 +920,7 @@ async function lookupItem(type) {
   </div>`;
   form.style.display = 'block'; 
   form.dataset.kode = code;
+  form.dataset.stok = stock ? stock.stok : 0;
   let elSatuan = document.getElementById('display-satuan-' + type);
   if(elSatuan) elSatuan.value = item.satuan;
   let elRak = document.getElementById('display-rak-' + type);
@@ -887,18 +946,27 @@ async function registerItem(type, code) {
 
 async function submitBarang(e, type) {
   e.preventDefault();
-  let kode = document.getElementById('form-' + type).dataset.kode;
+  let form = document.getElementById('form-' + type);
+  let kode = form.dataset.kode;
   let jumlah = parseInt(document.getElementById('input-jumlah-' + type).value);
   if (!kode || !jumlah || jumlah <= 0) { showModal('âš ï¸', 'warning', 'Input Tidak Valid', 'Jumlah harus lebih dari 0.', [{ l: 'OK' }]); return; }
-  if (type === 'keluar') { let s = getStockSummary().find(i => i.kode === kode); if (s && jumlah > s.stok) { showModal('âš ï¸', 'warning', 'Stok Tidak Cukup', `Stok saat ini: ${s.stok}`, [{ l: 'OK' }]); return } }
+  if (type === 'keluar') {
+    let s = await fetchStockByCode(kode);
+    if (jumlah > s.stok) {
+      showModal('warning', 'warning', 'Stok Tidak Cukup', `Stok saat ini: ${s.stok}`, [{ l: 'OK' }]);
+      return;
+    }
+  }
 
   let date = new Date().toISOString();
   try {
-    await apiFetch(`${API_URL}/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode, type, jumlah, date, user: currentUser.username }) });
-    await fetchAllData();
+    const savedTxn = await apiFetch(`${API_URL}/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kode, type, jumlah, date, user: currentUser.username }) });
+    upsertLocalTransaction(savedTxn);
+    await fetchAllData({ transactionLimit: 50 });
     if (socket) socket.emit('database-updated', { type: 'transaction', type_tx: type, kode, jumlah });
 
-    let nama = getItemByCode(kode).nama;
+    let item = getItemByCode(kode) || await fetchItemByCode(kode);
+    let nama = item ? item.nama : kode;
     showModal('âœ“', 'success', 'Berhasil', `${nama} â€” Jumlah: ${jumlah} berhasil dicatat.`, [{ l: 'OK', fn: () => renderItemForm(type, document.getElementById('karyawan-content')) }]);
   } catch (e) {
     showModal('âš ï¸', 'warning', 'Gagal Simpan Transaksi', e.message, [{ l: 'OK' }]);
@@ -907,7 +975,7 @@ async function submitBarang(e, type) {
 
 function renderRecent(type) {
   let el = document.getElementById('recent-' + type); if (!el) return;
-  let txns = getTxns().filter(t => t.type === type).slice(-5).reverse();
+  let txns = sortTxnsNewest(getTxns().filter(t => t.type === type)).slice(0, PAGE_SIZE);
   if (!txns.length) {
     el.innerHTML = `
       <div class="recent-section">
@@ -940,7 +1008,7 @@ function renderRecent(type) {
       <a href="#" onclick="event.preventDefault();showKaryawanView('history-${type}')" style="font-size:12px; color:var(--secondary); text-decoration:none; font-weight:600;">Lihat Semua &rarr;</a>
       </div>
       <div class="table-wrapper recent-table">
-        <div style="padding:10px 16px; font-size:12px; color:var(--text-muted); background:#F8FAFC;">Menampilkan maksimal ${PAGE_SIZE} data pertama agar halaman tetap ringan.</div>
+        <div style="padding:10px 16px; font-size:12px; color:var(--text-muted); background:#F8FAFC;">Menampilkan maksimal ${PAGE_SIZE} transaksi terbaru agar halaman tetap ringan.</div>
         <table>
           <thead class="table-header-dark"><tr><th>NO. TRANSAKSI</th><th>WAKTU</th><th>BARANG</th><th>JUMLAH</th><th>LOKASI RAK</th><th>STATUS</th><th>AKSI</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -952,7 +1020,7 @@ function renderRecent(type) {
 
 function renderTransactionHistory(type, c) {
   let title = type === 'masuk' ? 'Riwayat Barang Masuk' : 'Riwayat Barang Keluar';
-  let txns = getTxns().filter(t => t.type === type).slice().reverse();
+  let txns = sortTxnsNewest(getTxns().filter(t => t.type === type));
   let rows = txns.map(t => {
     let it = getItemByCode(t.kode);
     let details = getItemDetails(it);

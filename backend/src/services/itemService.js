@@ -16,6 +16,13 @@ class ItemService {
     return prisma.item.count();
   }
 
+  async getItemByKode(kode) {
+    if (!kode || !String(kode).trim()) throw new Error('Kode barang harus diisi');
+    return prisma.item.findUnique({
+      where: { kode: String(kode).trim() },
+    });
+  }
+
   async createItem(data) {
     if (!data.kode || !String(data.kode).trim()) throw new Error('Kode barang harus diisi');
     if (!data.nama || !String(data.nama).trim()) throw new Error('Nama barang harus diisi');

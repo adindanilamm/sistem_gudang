@@ -36,6 +36,16 @@ class ItemController {
     }
   }
 
+  async getByKode(req, res) {
+    try {
+      const item = await itemService.getItemByKode(req.params.kode);
+      if (!item) return res.status(404).json({ error: 'Barang tidak ditemukan' });
+      res.json(item);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+
   async delete(req, res) {
     const kode = req.params.kode;
     try {

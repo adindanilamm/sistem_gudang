@@ -26,6 +26,18 @@ class TransactionController {
       res.status(500).json({ error: e.message });
     }
   }
+
+  async getStock(req, res) {
+    try {
+      const stock = await transactionService.getStockByKode(req.params.kode);
+      res.json(stock);
+    } catch (e) {
+      if (e.message.includes('harus') || e.message.includes('tidak ditemukan')) {
+        return res.status(400).json({ error: e.message });
+      }
+      res.status(500).json({ error: e.message });
+    }
+  }
 }
 
 function parseLimit(value) {

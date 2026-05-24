@@ -9,6 +9,30 @@ class TransactionService {
     });
   }
 
+  async getStockByKode(kode) {
+    if (!kode || !String(kode).trim()) throw new Error('Kode barang harus diisi');
+
+    const cleanKode = String(kode).trim();
+    const item = await prisma.item.findUnique({ where: { kode: cleanKode } });
+    if (!item) throw new Error('Barang tidak ditemukan');
+
+    const totals = await prisma.transaction.groupBy({
+      by: ['type'],
+      where: { kode: cleanKode },
+      _sum: { jumlah: true },
+    });
+
+    const masuk = totals.find((tx) => tx.type === 'masuk')?._sum.jumlah || 0;
+    const keluar = totals.find((tx) => tx.type === 'keluar')?._sum.jumlah || 0;
+
+    return {
+      kode: cleanKode,
+      masuk,
+      keluar,
+      stok: masuk - keluar,
+    };
+  }
+
   async createTransaction(data) {
     const jumlah = parseInt(data.jumlah, 10);
 
