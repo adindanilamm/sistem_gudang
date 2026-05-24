@@ -3,7 +3,8 @@ const userService = require('../services/userService');
 class UserController {
   async getAll(req, res) {
     try {
-      const users = await userService.getAllUsers();
+      const limit = parseLimit(req.query.limit);
+      const users = await userService.getAllUsers({ limit });
       res.json(users);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -44,6 +45,12 @@ class UserController {
       res.status(500).json({ error: e.message });
     }
   }
+}
+
+function parseLimit(value) {
+  const limit = parseInt(value, 10);
+  if (!Number.isInteger(limit) || limit <= 0) return undefined;
+  return Math.min(limit, 100);
 }
 
 module.exports = new UserController();

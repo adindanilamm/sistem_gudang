@@ -1,8 +1,12 @@
 const prisma = require('../config/database');
 
 class ItemService {
-  async getAllItems() {
-    return prisma.item.findMany({ orderBy: { kode: 'asc' } });
+  async getAllItems(options = {}) {
+    const limit = options.limit;
+    return prisma.item.findMany({
+      orderBy: { kode: 'asc' },
+      ...(limit ? { take: limit } : {}),
+    });
   }
 
   async createItem(data) {

@@ -1,8 +1,12 @@
 const prisma = require('../config/database');
 
 class UserService {
-  async getAllUsers() {
-    return prisma.user.findMany({ orderBy: { id: 'asc' } });
+  async getAllUsers(options = {}) {
+    const limit = options.limit;
+    return prisma.user.findMany({
+      orderBy: { id: 'asc' },
+      ...(limit ? { take: limit } : {}),
+    });
   }
 
   async createUser(data) {

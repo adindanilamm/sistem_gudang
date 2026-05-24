@@ -154,10 +154,13 @@ if (socket) {
   });
 }
 
-async function fetchAllData() {
+async function fetchAllData(options = {}) {
+  const limit = options.limit || 10;
   try {
     let [resU, resI, resT] = await Promise.all([
-      fetch(`${API_URL}/users`), fetch(`${API_URL}/items`), fetch(`${API_URL}/transactions`)
+      fetch(`${API_URL}/users?limit=${limit}`),
+      fetch(`${API_URL}/items?limit=${limit}`),
+      fetch(`${API_URL}/transactions?limit=${limit}`)
     ]);
     localUsers = await parseApiResponse(resU);
     localItems = await parseApiResponse(resI);
@@ -228,9 +231,9 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   let p = document.getElementById(id);
   if (p) p.classList.add('active');
+  document.body.classList.add('js-loaded');
   document.body.classList.toggle('login-mode', id === 'login-page');
   document.body.classList.toggle('dashboard-mode', id === 'karyawan-page' || id === 'manager-page');
-  document.body.classList.toggle('login-mode', id === 'login-page');
   closeSidebar();
 }
 
@@ -297,32 +300,56 @@ function togglePasswordVisibility() {
 
 async function handleLogin(e) {
   e.preventDefault();
-  let u = document.getElementById('login-username').value.trim(), p = document.getElementById('login-password').value.trim(), err = document.getElementById('login-error');
-  if (!u || !p) { err.textContent = '⚠ Username dan password harus diisi!'; err.classList.add('show'); return }
+  let u = document.getElementById('login-username').value.trim();
+  let p = document.getElementById('login-password').value.trim();
+  let err = document.getElementById('login-error');
+
+  if (!u || !p) {
+    err.textContent = 'Username dan password harus diisi!';
+    err.classList.add('show');
+    return;
+  }
 
   try {
     let res = await fetch(`${API_URL}/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
     });
+
     if (!res.ok) {
       let data = null;
       try { data = await res.json(); } catch (e) {}
-      err.textContent = '? ' + ((data && data.error) || 'Login gagal!');
-      err.classList.add('show'); document.getElementById('login-password').value = ''; return;
+      err.textContent = (data && data.error) || 'Login gagal. Periksa username, password, dan tab role.';
+      err.classList.add('show');
+      document.getElementById('login-password').value = '';
+      return;
     }
+
     let user = await res.json();
-    
-    // Validasi tab role
+
     if (user.role !== selectedRole) {
-      err.textContent = `⚠ Anda terdaftar sebagai ${user.role}, harap pilih tab ${user.role} untuk login!`;
+      err.textContent = `Akun ini terdaftar sebagai ${user.role}. Pilih tab ${user.role} untuk login.`;
       err.classList.add('show');
       return;
     }
-    
-    err.classList.remove('show'); currentUser = user; document.getElementById('login-form').reset();
-    localStorage.setItem('stockflow_user', JSON.stringify(user)); // Simpan Sesi
-    await fetchAllData();
+
+    err.classList.remove('show');
+    currentUser = user;
+    document.getElementById('login-form').reset();
+    localStorage.setItem('stockflow_user', JSON.stringify(user));
+
+    try {
+      await fetchAllData();
+    } catch (dataError) {
+      console.error('Login berhasil, tetapi gagal memuat data dashboard:', dataError);
+      localStorage.removeItem('stockflow_user');
+      currentUser = null;
+      err.textContent = `Login berhasil, tetapi data dashboard gagal dimuat: ${dataError.message}`;
+      err.classList.add('show');
+      return;
+    }
+
     if (user.role === 'karyawan') {
       renderKaryawan();
       showPage('karyawan-page');
@@ -334,7 +361,7 @@ async function handleLogin(e) {
     }
   } catch (e) {
     console.error(e);
-    err.textContent = '⚠ Gagal menghubungi server. Pastikan server backend sedang berjalan!';
+    err.textContent = `Gagal menghubungi server login: ${e.message}`;
     err.classList.add('show');
   }
 }
@@ -905,6 +932,7 @@ function renderRecent(type) {
       <a href="#" onclick="event.preventDefault();showKaryawanView('history-${type}')" style="font-size:12px; color:var(--secondary); text-decoration:none; font-weight:600;">Lihat Semua &rarr;</a>
       </div>
       <div class="table-wrapper recent-table">
+        <div style="padding:10px 16px; font-size:12px; color:var(--text-muted); background:#F8FAFC;">Menampilkan maksimal ${PAGE_SIZE} data pertama agar halaman tetap ringan.</div>
         <table>
           <thead class="table-header-dark"><tr><th>NO. TRANSAKSI</th><th>WAKTU</th><th>BARANG</th><th>JUMLAH</th><th>LOKASI RAK</th><th>STATUS</th><th>AKSI</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -1518,11 +1546,12 @@ function generateLaporan() {
       return { ...item, stokAwal, masuk, keluar, sisaStok };
     });
     
-    let totalMasuk = summary.reduce((s, i) => s + i.masuk, 0);
-    let totalKeluar = summary.reduce((s, i) => s + i.keluar, 0);
-    let totalSisa = summary.reduce((s, i) => s + i.sisaStok, 0);
+    let displaySummary = summary.slice(0, PAGE_SIZE);
+    let totalMasuk = displaySummary.reduce((s, i) => s + i.masuk, 0);
+    let totalKeluar = displaySummary.reduce((s, i) => s + i.keluar, 0);
+    let totalSisa = displaySummary.reduce((s, i) => s + i.sisaStok, 0);
 
-    let rows = summary.length ? summary.map((i, n) => `<tr>
+    let rows = displaySummary.length ? displaySummary.map((i, n) => `<tr>
         <td>${n + 1}</td>
         <td><strong>${i.kode}</strong></td>
         <td class="text-left">${i.nama}</td>

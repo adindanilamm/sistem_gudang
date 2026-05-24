@@ -8,18 +8,14 @@
   <meta name="description" content="StockFlow - Sistem Manajemen Stok Barang">
   <title>StockFlow — Sistem Manajemen Stok</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=7">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <!-- Inline CSS fallback: login page tampil meskipun JS gagal load -->
   <style>
-    /* Fallback: login page visible by default, akan di-override oleh style.css+JS */
-    #login-page { display: flex !important; visibility: visible !important; }
-    .page:not(#login-page) { display: none !important; visibility: hidden !important; }
-    /* Setelah JS berhasil load, class ini akan mengontrol visibility */
-    body.js-loaded #login-page { display: none !important; visibility: hidden !important; }
-    body.js-loaded .page.active { display: flex !important; visibility: visible !important; }
-    body.js-loaded .page:not(.active) { display: none !important; visibility: hidden !important; }
+    /* Fallback: sebelum app.js siap, tampilkan login agar halaman tidak blank */
+    body:not(.js-loaded) #login-page { display: flex !important; visibility: visible !important; }
+    body:not(.js-loaded) .page:not(#login-page) { display: none !important; visibility: hidden !important; }
   </style>
 </head>
 <body>
@@ -184,10 +180,6 @@
     document.head.appendChild(s);
   "></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script>
-    // Tandai bahwa JS sudah berhasil load — aktifkan kontrol visibility via CSS
-    document.body.classList.add('js-loaded');
-  </script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

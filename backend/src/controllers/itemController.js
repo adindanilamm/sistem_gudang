@@ -3,7 +3,8 @@ const itemService = require('../services/itemService');
 class ItemController {
   async getAll(req, res) {
     try {
-      const items = await itemService.getAllItems();
+      const limit = parseLimit(req.query.limit);
+      const items = await itemService.getAllItems({ limit });
       res.json(items);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -31,6 +32,12 @@ class ItemController {
       res.status(500).json({ error: e.message });
     }
   }
+}
+
+function parseLimit(value) {
+  const limit = parseInt(value, 10);
+  if (!Number.isInteger(limit) || limit <= 0) return undefined;
+  return Math.min(limit, 100);
 }
 
 module.exports = new ItemController();

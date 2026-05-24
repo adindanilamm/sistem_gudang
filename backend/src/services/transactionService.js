@@ -1,8 +1,12 @@
 const prisma = require('../config/database');
 
 class TransactionService {
-  async getAllTransactions() {
-    return prisma.transaction.findMany({ orderBy: { id: 'asc' } });
+  async getAllTransactions(options = {}) {
+    const limit = options.limit;
+    return prisma.transaction.findMany({
+      orderBy: { id: 'desc' },
+      ...(limit ? { take: limit } : {}),
+    });
   }
 
   async createTransaction(data) {

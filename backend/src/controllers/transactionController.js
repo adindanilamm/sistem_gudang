@@ -3,7 +3,8 @@ const transactionService = require('../services/transactionService');
 class TransactionController {
   async getAll(req, res) {
     try {
-      const txns = await transactionService.getAllTransactions();
+      const limit = parseLimit(req.query.limit);
+      const txns = await transactionService.getAllTransactions({ limit });
       res.json(txns);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -25,6 +26,12 @@ class TransactionController {
       res.status(500).json({ error: e.message });
     }
   }
+}
+
+function parseLimit(value) {
+  const limit = parseInt(value, 10);
+  if (!Number.isInteger(limit) || limit <= 0) return undefined;
+  return Math.min(limit, 100);
 }
 
 module.exports = new TransactionController();

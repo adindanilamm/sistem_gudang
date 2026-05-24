@@ -14,6 +14,7 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', true);
 
 // ================================================================
 // Auto-redirect HTTP → HTTPS untuk akses dari HP (non-localhost)
@@ -24,8 +25,9 @@ app.use((req, res, next) => {
   const host = req.hostname || req.headers.host;
   const isLocalhost = host === 'localhost' || host === '127.0.0.1';
   const isHTTPS = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const isTunnelHost = /trycloudflare\.com$|ngrok-free\.app$|loca\.lt$/i.test(host);
 
-  if (!isLocalhost && !isHTTPS) {
+  if (!isLocalhost && !isHTTPS && !isTunnelHost) {
     const httpsPort = process.env.HTTPS_PORT || 3443;
     const httpsUrl = `https://${host}:${httpsPort}${req.originalUrl}`;
     return res.redirect(301, httpsUrl);
