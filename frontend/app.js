@@ -1769,17 +1769,18 @@ function printManagerStockReport() {
   const generatedAt = report.generatedAt || new Date().toISOString();
   const reportId = `RPT-STK-${new Date(generatedAt).getFullYear()}-${String(report.page || 1).padStart(3, '0')}`;
   const periodLabel = `${formatReportDate(managerReportStart)} - ${formatReportDate(managerReportEnd)}`;
+  const printedRows = rows.slice(0, PAGE_SIZE);
   let existing = document.getElementById('printable-report');
   if (existing) existing.remove();
 
   const printable = document.createElement('div');
   printable.id = 'printable-report';
   printable.innerHTML = `
-    <div class="print-report-page">
+    <section class="print-report-page">
       <div class="print-report-header">
         <div>
           <h1>Laporan<br>Mutasi Stok</h1>
-          <p>Periode: ${periodLabel}</p>
+          <p>${faIcon('calendar-days')} Periode: ${periodLabel}</p>
         </div>
         <div class="print-report-meta">
           <p>Generated on: ${formatDateTime(generatedAt)}</p>
@@ -1787,46 +1788,60 @@ function printManagerStockReport() {
           <p>Ref ID: ${reportId}</p>
         </div>
       </div>
+
       <div class="print-report-line"></div>
-      <table class="print-table">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>SKU</th>
-            <th>Nama Barang</th>
-            <th>Stok Awal</th>
-            <th>Jumlah Barang<br>Masuk/Keluar</th>
-            <th>Sisa Stok</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((row, index) => `
+
+      <div class="print-table-card">
+        <table class="print-table">
+          <thead>
             <tr>
-              <td>${index + 1}</td>
-              <td>${row.kode}</td>
-              <td class="text-left">${row.nama}</td>
-              <td>${formatReportNumber(row.stokAwal)}</td>
-              <td>${formatReportNumber(row.masuk)} / ${formatReportNumber(row.keluar)}</td>
-              <td>${formatReportNumber(row.sisaStok)}</td>
+              <th rowspan="2">No</th>
+              <th rowspan="2">SKU</th>
+              <th rowspan="2">Nama Barang</th>
+              <th rowspan="2">Stok Awal</th>
+              <th colspan="2">Jumlah Barang<br>Masuk/Keluar</th>
+              <th rowspan="2">Sisa Stok</th>
             </tr>
-          `).join('')}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="3">TOTAL MOVEMENT</td>
-            <td>${formatReportNumber(totals.stokAwal)}</td>
-            <td>${formatReportNumber(totals.masuk)} / ${formatReportNumber(totals.keluar)}</td>
-            <td>${formatReportNumber(totals.sisaStok)}</td>
-          </tr>
-        </tfoot>
-      </table>
+            <tr>
+              <th>Masuk</th>
+              <th>Keluar</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${printedRows.map((row, index) => `
+              <tr>
+                <td>${index + 1}</td>
+                <td>${row.kode || '-'}</td>
+                <td class="text-left">${row.nama || '-'}</td>
+                <td>${formatReportNumber(row.stokAwal)}</td>
+                <td>${formatReportNumber(row.masuk)}</td>
+                <td>${formatReportNumber(row.keluar)}</td>
+                <td>${formatReportNumber(row.sisaStok)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">TOTAL MOVEMENT</td>
+              <td>${formatReportNumber(totals.masuk)}</td>
+              <td>${formatReportNumber(totals.keluar)}</td>
+              <td>${formatReportNumber(totals.sisaStok)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
       <div class="print-signatures">
         <div class="sig-box"><p>Dibuat Oleh,</p><div class="sig-line"></div><p>Warehouse Admin</p><span>ID: LT-ADM-04</span></div>
         <div class="sig-box"><p>Diperiksa Oleh,</p><div class="sig-line"></div><p>Inventory Control</p><span>ID: LT-INC-02</span></div>
         <div class="sig-box"><p>Disetujui Oleh,</p><div class="sig-line"></div><p>Operations Manager</p><span>ID: LT-MGR-01</span></div>
       </div>
-      <div class="print-footer">© 2026 WarehouseOps. Page 1 of 1</div>
-    </div>
+
+      <div class="print-report-footer">
+        <span>© 2026 WarehouseOps. All rights reserved.</span>
+        <span>Page 1 of 1</span>
+      </div>
+    </section>
   `;
   document.body.appendChild(printable);
   document.body.classList.add('printing-report');
@@ -1835,7 +1850,7 @@ function printManagerStockReport() {
     let report = document.getElementById('printable-report');
     if (report) report.remove();
   };
-  window.print();
+  setTimeout(() => window.print(), 100);
 }
 
 function getTodayInput() {
